@@ -1,0 +1,3 @@
+# This directory contains compiled binaries for the lcontext MCP CLI.
+# Binaries are built with: npm run build:all
+# They are served from /downloads/mcp/latest/<binary-name>
