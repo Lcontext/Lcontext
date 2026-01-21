@@ -52,7 +52,49 @@ npm run build
 
 Sign up at [lcontext.com](https://lcontext.com) and find your API key in **Settings > API Access**.
 
-### 2. Configure Your AI Coding Tool
+### 2. Add the Tracking Script to Your Website
+
+Before the MCP server can provide analytics context, you need to install the tracking script on your website to collect behavioral data.
+
+**Quick install:** Add this to your website's HTML:
+
+```html
+<script src="https://lcontext.com/it.js?iTag=YOUR_SITE_TAG" defer></script>
+```
+
+Replace `YOUR_SITE_TAG` with the tag from your website settings in the Lcontext dashboard.
+
+<details>
+<summary><b>What the tracker collects</b></summary>
+
+- **Page views** - URL, title, referrer
+- **Clicks** - Buttons, links, interactive elements (label text only, no personal data)
+- **Form submissions** - Form metadata (no field values captured)
+- **Scroll depth** - How far users scroll (25% increments)
+- **Device metadata** - Screen size, browser language, viewport
+
+**Privacy-focused:** No passwords, input values, or personal information collected. ~4KB minified.
+
+</details>
+
+<details>
+<summary><b>Advanced: Link to your user IDs</b></summary>
+
+Associate the anonymous visitor with your application's user ID:
+
+```javascript
+lcontext('setProfileId', 'user-123');
+```
+
+Track custom events:
+
+```javascript
+lcontext('trackEvent', 'purchase', { productId: 'abc', amount: 99.99 });
+```
+
+</details>
+
+### 3. Configure Your AI Coding Tool
 
 <details open>
 <summary><b>Claude Code / Claude Desktop</b></summary>
