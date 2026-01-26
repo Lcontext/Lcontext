@@ -52,17 +52,17 @@ npm run build
 
 Sign up at [lcontext.com](https://lcontext.com) and find your API key in **Settings > API Access**.
 
-### 2. Add the Tracking Script to Your Website
+### 2. Add the Tracking Script to Your App
 
-Before the MCP server can provide analytics context, you need to install the tracking script on your website to collect behavioral data.
+Before the MCP server can provide analytics context, you need to install the tracking script on your app to collect behavioral data.
 
-**Quick install:** Add this to your website's HTML:
+**Quick install:** Add this to your app's HTML:
 
 ```html
 <script src="https://lcontext.com/it.js?iTag=YOUR_SITE_TAG" defer></script>
 ```
 
-Replace `YOUR_SITE_TAG` with the tag from your website settings in the Lcontext dashboard.
+Replace `YOUR_SITE_TAG` with the tag from your app settings in the Lcontext dashboard.
 
 <details>
 <summary><b>What the tracker collects</b></summary>
@@ -225,7 +225,7 @@ Get the analytics context for the /checkout page for the last 7 days
 
 ### `list_pages`
 
-List all tracked pages for your website.
+List all tracked pages for your app.
 
 **Parameters:**
 - `limit` (optional): Maximum pages to return (default: 50, max: 200)
@@ -233,7 +233,7 @@ List all tracked pages for your website.
 
 **Example:**
 ```
-What pages are being tracked on my website?
+What pages are being tracked on my app?
 ```
 
 ### `get_element_context`
