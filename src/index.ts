@@ -21,11 +21,11 @@
 // Handle CLI flags before importing heavy dependencies
 const args = process.argv.slice(2);
 if (args.includes('--version') || args.includes('-v')) {
-  console.log('1.1.0');
+  console.log('1.1.1');
   process.exit(0);
 }
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`lcontext v1.1.0
+  console.log(`lcontext v1.1.1
 
 MCP server for Lcontext page analytics.
 Provides page and element context for AI coding agents.
@@ -42,15 +42,15 @@ Environment Variables:
   LCONTEXT_API_KEY    Your Lcontext API key (required)
   LCONTEXT_API_URL    API base URL (default: https://lcontext.com)
 
-Documentation: https://lcontext.com/docs/mcp
+Documentation: https://github.com/Lcontext/Lcontext
 `);
   process.exit(0);
 }
 // Self-update command - runs async then exits
 if (args.includes('--update')) {
   import('fs').then(fs => import('os').then(os => {
-    const CURRENT_VERSION = '1.1.0';
-    const GITHUB_REPO = 'evan-kyr/lcontext';
+    const CURRENT_VERSION = '1.1.1';
+    const GITHUB_REPO = 'Lcontext/Lcontext';
 
     const platform = os.platform();
     const arch = os.arch();
@@ -129,8 +129,8 @@ import {
 import { z } from "zod";
 
 // Configuration
-const CURRENT_VERSION = "1.1.0";
-const GITHUB_REPO = "evan-kyr/lcontext";
+const CURRENT_VERSION = "1.1.1";
+const GITHUB_REPO = "Lcontext/Lcontext";
 const API_BASE_URL = process.env.LCONTEXT_API_URL || "https://lcontext.com";
 const API_KEY = process.env.LCONTEXT_API_KEY;
 
@@ -271,7 +271,7 @@ async function apiRequest(endpoint: string, options: RequestInit = {}): Promise<
 
 // Helper function to format page context
 function formatPageContext(data: any): string {
-  const { page, stats, elements } = data;
+  const { page, stats, elements, _dataRetention } = data;
 
   let output = `
 ## Page Analytics: ${page.path}
@@ -328,10 +328,11 @@ ${page.title ? `**Title:** ${page.title}` : ''}
   if (elements.length === 0) {
     output += "No interactive elements tracked on this page.\n";
   } else {
-    // Calculate total interactions for each element
+    // Calculate total interactions and unique visitors for each element
     const elementsWithTotals = elements.map((element: any) => {
       const totalInteractions = element.stats.reduce((sum: number, s: any) => sum + (s.interactionCount || 0), 0);
-      return { ...element, totalInteractions };
+      const totalUniqueVisitors = element.stats.reduce((sum: number, s: any) => sum + (s.uniqueVisitors || 0), 0);
+      return { ...element, totalInteractions, totalUniqueVisitors };
     }).sort((a: any, b: any) => b.totalInteractions - a.totalInteractions);
 
     for (const element of elementsWithTotals.slice(0, 20)) {
@@ -339,11 +340,21 @@ ${page.title ? `**Title:** ${page.title}` : ''}
       const category = element.category?.toUpperCase() || 'OTHER';
 
       output += `
-**${category}: ${label}**
-- Interactions: ${element.totalInteractions}
-- Tag: \`<${element.tagName || 'unknown'}>\`${element.elementId ? ` id="${element.elementId}"` : ''}
+**${category}: ${label}** (ID: ${element.id})
+- Total Interactions: ${element.totalInteractions}
+- Unique Visitors: ${element.totalUniqueVisitors}
+- Tag: \`<${element.tagName || 'unknown'}>\`${element.elementId ? ` id="${element.elementId}"` : ''}${element.ariaLabel ? ` aria-label="${element.ariaLabel}"` : ''}
 ${element.destinationUrl ? `- Links to: ${element.destinationUrl}` : ''}
+- Per-period breakdown:
 `;
+      // Show per-period stats
+      for (const stat of element.stats.slice(0, 7)) {
+        const date = new Date(stat.periodStart).toLocaleDateString();
+        output += `  - ${date}: ${stat.interactionCount} interactions, ${stat.uniqueVisitors} visitors\n`;
+      }
+      if (element.stats.length > 7) {
+        output += `  - *...and ${element.stats.length - 7} more periods*\n`;
+      }
     }
 
     if (elementsWithTotals.length > 20) {
@@ -351,12 +362,17 @@ ${element.destinationUrl ? `- Links to: ${element.destinationUrl}` : ''}
     }
   }
 
+  // Add data retention notice if present
+  if (_dataRetention) {
+    output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
+  }
+
   return output.trim();
 }
 
 // Helper function to format app context
 function formatAppContext(data: any): string {
-  const { stats, topPages, topEntryPages, topExitPages, recentInsights } = data;
+  const { stats, topPages, topEntryPages, topExitPages, recentInsights, _dataRetention } = data;
 
   let output = `## Application Analytics Overview\n`;
 
@@ -369,15 +385,24 @@ function formatAppContext(data: any): string {
       uniqueVisitors: acc.uniqueVisitors + (stat.uniqueVisitors || 0),
       newVisitors: acc.newVisitors + (stat.newVisitors || 0),
       pageViews: acc.pageViews + (stat.totalPageViews || 0),
-      totalDuration: acc.totalDuration + (stat.totalDuration || 0),
-      totalEvents: acc.totalEvents + (stat.totalEvents || 0),
+      totalClicks: acc.totalClicks + (stat.totalClicks || 0),
+      totalFormSubmits: acc.totalFormSubmits + (stat.totalFormSubmits || 0),
       bounces: acc.bounces + (stat.bounceCount || 0),
       positiveSessions: acc.positiveSessions + (stat.positiveSessions || 0),
       negativeSessions: acc.negativeSessions + (stat.negativeSessions || 0),
       neutralSessions: acc.neutralSessions + (stat.neutralSessions || 0)
-    }), { sessions: 0, uniqueVisitors: 0, newVisitors: 0, pageViews: 0, totalDuration: 0, totalEvents: 0, bounces: 0, positiveSessions: 0, negativeSessions: 0, neutralSessions: 0 });
+    }), { sessions: 0, uniqueVisitors: 0, newVisitors: 0, pageViews: 0, totalClicks: 0, totalFormSubmits: 0, bounces: 0, positiveSessions: 0, negativeSessions: 0, neutralSessions: 0 });
 
-    const avgSessionDuration = totals.sessions > 0 ? Math.round(totals.totalDuration / totals.sessions) : 0;
+    // Calculate averages from individual stats
+    const avgSessionDuration = stats.length > 0
+      ? Math.round(stats.reduce((sum: number, s: any) => sum + (s.avgSessionDuration || 0), 0) / stats.length)
+      : 0;
+    const avgPagesPerSession = stats.length > 0
+      ? (stats.reduce((sum: number, s: any) => sum + (s.avgPagesPerSession || 0), 0) / stats.length).toFixed(1)
+      : '0';
+    const avgEventsPerSession = stats.length > 0
+      ? (stats.reduce((sum: number, s: any) => sum + (s.avgEventsPerSession || 0), 0) / stats.length).toFixed(1)
+      : '0';
     const bounceRate = totals.sessions > 0 ? ((totals.bounces / totals.sessions) * 100).toFixed(1) : '0';
 
     output += `
@@ -386,8 +411,11 @@ function formatAppContext(data: any): string {
 - **Unique Visitors:** ${totals.uniqueVisitors.toLocaleString()}
 - **New Visitors:** ${totals.newVisitors.toLocaleString()}
 - **Total Page Views:** ${totals.pageViews.toLocaleString()}
+- **Total Clicks:** ${totals.totalClicks.toLocaleString()}
+- **Total Form Submits:** ${totals.totalFormSubmits.toLocaleString()}
 - **Avg Session Duration:** ${avgSessionDuration}s
-- **Total Events:** ${totals.totalEvents.toLocaleString()}
+- **Avg Pages Per Session:** ${avgPagesPerSession}
+- **Avg Events Per Session:** ${avgEventsPerSession}
 - **Bounce Rate:** ${bounceRate}%
 
 ### Session Sentiment
@@ -397,7 +425,7 @@ function formatAppContext(data: any): string {
 `;
     for (const stat of stats.slice(0, 7)) {
       const date = new Date(stat.periodStart).toLocaleDateString();
-      output += `| ${date} | Sessions: ${stat.totalSessions} | Visitors: ${stat.uniqueVisitors} | Page Views: ${stat.totalPageViews} | Bounce: ${stat.bounceRate}% |\n`;
+      output += `| ${date} | Sessions: ${stat.totalSessions} | Visitors: ${stat.uniqueVisitors} | Pages/Session: ${stat.avgPagesPerSession || 0} | Clicks: ${stat.totalClicks || 0} | Bounce: ${stat.bounceRate}% |\n`;
     }
 
     // Add AI summaries if available
@@ -444,25 +472,33 @@ function formatAppContext(data: any): string {
     }
   }
 
+  // Add data retention notice if present
+  if (_dataRetention) {
+    output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
+  }
+
   return output.trim();
 }
 
 // Helper function to format visitors list
 function formatVisitors(data: any): string {
-  const { visitors, total, limit, offset } = data;
+  const { visitors, total, limit, offset, _dataRetention } = data;
 
   let output = `## Visitors\n\n`;
-  output += `Showing ${visitors.length} of ${total} visitors (offset: ${offset}):\n`;
+  output += `Showing ${visitors.length} of ${total} visitors (limit: ${limit}, offset: ${offset}):\n`;
 
   if (visitors.length === 0) {
     output += "\nNo visitors found matching the criteria.\n";
+    if (_dataRetention) {
+      output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
+    }
     return output.trim();
   }
 
   for (const visitor of visitors) {
     const sentiment = visitor.overallSentiment ? ` | ${visitor.overallSentiment}` : '';
     const trend = visitor.engagementTrend ? ` | Trend: ${visitor.engagementTrend}` : '';
-    const segment = visitor.segmentName ? ` | Segment: ${visitor.segmentName}` : '';
+    const segment = visitor.segmentName ? ` | Segment: ${visitor.segmentName} (ID: ${visitor.segmentId})` : '';
 
     output += `
 ### ${visitor.profileTitle || visitor.visitorId}
@@ -480,9 +516,22 @@ function formatVisitors(data: any): string {
       output += `- **Interests:** ${visitor.primaryInterests.join(', ')}\n`;
     }
 
+    if (visitor.goalsInferred && visitor.goalsInferred.length > 0) {
+      output += `- **Inferred Goals:** ${visitor.goalsInferred.join(', ')}\n`;
+    }
+
     if (visitor.recommendedAction) {
       output += `- **Recommended Action:** ${visitor.recommendedAction}\n`;
     }
+
+    if (visitor.evidence && visitor.evidence.length > 0) {
+      output += `- **Evidence:** ${visitor.evidence.join('; ')}\n`;
+    }
+  }
+
+  // Add data retention notice if present
+  if (_dataRetention) {
+    output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
   }
 
   return output.trim();
@@ -490,7 +539,7 @@ function formatVisitors(data: any): string {
 
 // Helper function to format visitor detail
 function formatVisitorDetail(data: any): string {
-  const { visitor, recentSessions } = data;
+  const { visitor, recentSessions, _dataRetention } = data;
 
   let output = `## Visitor Profile: ${visitor.profileTitle || visitor.visitorId}\n`;
 
@@ -557,18 +606,26 @@ function formatVisitorDetail(data: any): string {
     }
   }
 
+  // Add data retention notice if present
+  if (_dataRetention) {
+    output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
+  }
+
   return output.trim();
 }
 
 // Helper function to format sessions list
 function formatSessions(data: any): string {
-  const { sessions, total, limit, offset } = data;
+  const { sessions, total, limit, offset, _dataRetention } = data;
 
   let output = `## Sessions\n\n`;
-  output += `Showing ${sessions.length} of ${total} sessions (offset: ${offset}):\n`;
+  output += `Showing ${sessions.length} of ${total} sessions (limit: ${limit}, offset: ${offset}):\n`;
 
   if (sessions.length === 0) {
     output += "\nNo sessions found matching the criteria.\n";
+    if (_dataRetention) {
+      output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
+    }
     return output.trim();
   }
 
@@ -591,10 +648,11 @@ function formatSessions(data: any): string {
     if (session.description) {
       output += `- **Description:** ${session.description}\n`;
     }
+  }
 
-    if (session.summary) {
-      output += `- **Summary:** ${session.summary}\n`;
-    }
+  // Add data retention notice if present
+  if (_dataRetention) {
+    output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
   }
 
   return output.trim();
@@ -602,7 +660,7 @@ function formatSessions(data: any): string {
 
 // Helper function to format session detail
 function formatSessionDetail(data: any): string {
-  const { session, visitor } = data;
+  const { session, visitor, _dataRetention } = data;
 
   const date = new Date(session.startTime).toLocaleDateString();
   const time = new Date(session.startTime).toLocaleTimeString();
@@ -629,6 +687,9 @@ function formatSessionDetail(data: any): string {
     if (visitor.overallSentiment) {
       output += `**Overall Sentiment:** ${visitor.overallSentiment}\n`;
     }
+    if (visitor.engagementTrend) {
+      output += `**Engagement Trend:** ${visitor.engagementTrend}\n`;
+    }
     if (visitor.segmentName) {
       output += `**Segment:** ${visitor.segmentName}\n`;
     }
@@ -636,10 +697,6 @@ function formatSessionDetail(data: any): string {
 
   if (session.description) {
     output += `\n### Session Description\n${session.description}\n`;
-  }
-
-  if (session.summary) {
-    output += `\n### AI Summary\n${session.summary}\n`;
   }
 
   if (session.events && Array.isArray(session.events) && session.events.length > 0) {
@@ -658,23 +715,67 @@ function formatSessionDetail(data: any): string {
       .join(', ');
     output += '\n\n';
 
-    // Show first 20 events with details
-    const eventsToShow = session.events.slice(0, 20);
-    for (const event of eventsToShow) {
+    // Show all events with full details
+    for (const event of session.events) {
       const eventTime = event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : '';
       output += `- **${event.type}**${eventTime ? ` (${eventTime})` : ''}`;
 
       if (event.data) {
-        if (event.data.path) output += ` - ${event.data.path}`;
-        if (event.data.elementId) output += ` [#${event.data.elementId}]`;
-        if (event.data.label) output += ` "${event.data.label}"`;
+        switch (event.type) {
+          case 'page_view':
+            output += ` ${event.data.path || '/'}`;
+            if (event.data.title) output += ` "${event.data.title}"`;
+            if (event.data.referrer) output += ` (referrer: ${event.data.referrer})`;
+            break;
+
+          case 'click':
+            if (event.data.label) output += ` "${event.data.label}"`;
+            output += ` <${event.data.tagName || 'UNKNOWN'}>`;
+            if (event.data.id) output += ` #${event.data.id}`;
+            if (event.data.selector) output += ` [${event.data.selector}]`;
+            if (event.data.destinationUrl) output += ` → ${event.data.destinationUrl}`;
+            if (event.data.sourcePath) output += ` on ${event.data.sourcePath}`;
+            break;
+
+          case 'form_submit':
+            output += ` <FORM>`;
+            if (event.data.id) output += ` #${event.data.id}`;
+            if (event.data.name) output += ` name="${event.data.name}"`;
+            if (event.data.method) output += ` method=${event.data.method}`;
+            if (event.data.destinationUrl) output += ` → ${event.data.destinationUrl}`;
+            if (event.data.sourcePath) output += ` on ${event.data.sourcePath}`;
+            break;
+
+          case 'scroll_depth':
+            output += ` ${event.data.depth}%`;
+            if (event.data.sourcePath) output += ` on ${event.data.sourcePath}`;
+            break;
+
+          case 'web_vital':
+            output += ` ${event.data.metric}=${event.data.value}`;
+            if (event.data.metric === 'CLS') {
+              // CLS is a ratio, not milliseconds
+            } else {
+              output += 'ms';
+            }
+            if (event.data.sourceUrl) {
+              const path = new URL(event.data.sourceUrl).pathname;
+              output += ` on ${path}`;
+            }
+            break;
+
+          default:
+            // For any other event types, output all data
+            output += ` ${JSON.stringify(event.data)}`;
+        }
       }
       output += '\n';
     }
+  }
 
-    if (session.events.length > 20) {
-      output += `\n*... and ${session.events.length - 20} more events*\n`;
-    }
+  // Add data retention notice if present
+  if (_dataRetention) {
+    output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
   }
 
   return output.trim();
@@ -970,8 +1071,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       output += `Found ${data.pages.length} pages${data.total > data.pages.length ? ` (showing first ${data.pages.length} of ${data.total})` : ''}:\n\n`;
 
       for (const page of data.pages) {
+        const firstSeen = new Date(page.firstSeenAt).toLocaleDateString();
         const lastSeen = new Date(page.lastSeenAt).toLocaleDateString();
-        output += `- **${page.path}**${page.title ? ` - ${page.title}` : ''} (last seen: ${lastSeen})\n`;
+        output += `- **${page.path}**${page.title ? ` - ${page.title}` : ''} (first seen: ${firstSeen}, last seen: ${lastSeen})\n`;
+      }
+
+      // Add data retention notice if present (indicates free plan limitations)
+      if (data._dataRetention) {
+        output += `\n---\n*Note: Data limited to last ${data._dataRetention.days} days (free plan). Upgrade for full history.*\n`;
       }
 
       return {
@@ -1019,7 +1126,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       for (const element of data.elements) {
         output += `
-### ${element.category?.toUpperCase() || 'ELEMENT'}: ${element.label || element.elementId || 'Unknown'}
+### ${element.category?.toUpperCase() || 'ELEMENT'}: ${element.label || element.elementId || 'Unknown'} (ID: ${element.id})
 - **Page:** ${element.pagePath}
 - **Tag:** \`<${element.tagName || 'unknown'}>\`
 - **HTML ID:** ${element.elementId || 'N/A'}
@@ -1032,6 +1139,11 @@ ${element.destinationUrl ? `- **Links to:** ${element.destinationUrl}` : ''}
 - **First Seen:** ${new Date(element.firstSeenAt).toLocaleDateString()}
 - **Last Seen:** ${new Date(element.lastSeenAt).toLocaleDateString()}
 `;
+      }
+
+      // Add data retention notice if present
+      if (data._dataRetention) {
+        output += `\n---\n*Note: Data limited to last ${data._dataRetention.days} days (free plan). Upgrade for full history.*\n`;
       }
 
       return {

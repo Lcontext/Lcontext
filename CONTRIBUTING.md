@@ -6,7 +6,7 @@ Thanks for your interest in contributing!
 
 ```bash
 # Clone the repo
-git clone https://github.com/evan-kyr/lcontext.git
+git clone https://github.com/Lcontext/Lcontext.git
 cd lcontext
 
 # Install dependencies

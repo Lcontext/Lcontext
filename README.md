@@ -19,7 +19,7 @@ This downloads a standalone binary - no Node.js required.
 
 ### Manual Download
 
-Download the binary for your platform from the [latest release](https://github.com/evan-kyr/lcontext/releases/latest):
+Download the binary for your platform from the [latest release](https://github.com/Lcontext/Lcontext/releases/latest):
 
 | Platform | Binary |
 |----------|--------|

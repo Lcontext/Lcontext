@@ -6,7 +6,7 @@ set -e
 
 INSTALL_DIR="${HOME}/.local/bin"
 BINARY_NAME="lcontext"
-GITHUB_REPO="evan-kyr/lcontext"
+GITHUB_REPO="Lcontext/Lcontext"
 
 # Use latest release by default, or a specific version if LCONTEXT_VERSION is set
 if [ -n "${LCONTEXT_VERSION:-}" ]; then

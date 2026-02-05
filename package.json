@@ -1,6 +1,6 @@
 {
   "name": "lcontext-mcp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "MCP server for Lcontext page analytics - provides page and element context for Claude",
   "type": "module",
   "main": "dist/index.js",
@@ -14,10 +14,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/evan-kyr/lcontext.git"
+    "url": "git+https://github.com/Lcontext/Lcontext.git"
   },
   "bugs": {
-    "url": "https://github.com/evan-kyr/lcontext/issues"
+    "url": "https://github.com/Lcontext/Lcontext/issues"
   },
   "homepage": "https://lcontext.com",
   "author": "lcontext",
