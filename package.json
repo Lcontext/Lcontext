@@ -1,11 +1,11 @@
 {
   "name": "lcontext-mcp",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "MCP server for Lcontext page analytics - provides page and element context for Claude",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "lcontext": "./dist/index.js"
+    "lcontext": "dist/index.js"
   },
   "files": [
     "dist/",

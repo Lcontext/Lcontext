@@ -372,7 +372,7 @@ ${element.destinationUrl ? `- Links to: ${element.destinationUrl}` : ''}
 
 // Helper function to format app context
 function formatAppContext(data: any): string {
-  const { stats, topPages, topEntryPages, topExitPages, recentInsights, _dataRetention } = data;
+  const { stats, topPages, topEntryPages, topExitPages, topReferrers, topCountries, recentInsights, _dataRetention } = data;
 
   let output = `## Application Analytics Overview\n`;
 
@@ -463,6 +463,22 @@ function formatAppContext(data: any): string {
     }
   }
 
+  // Top referrers
+  if (topReferrers && topReferrers.length > 0) {
+    output += `\n### Top Referrers\n`;
+    for (const ref of topReferrers.slice(0, 5)) {
+      output += `- ${ref.source}: ${ref.sessions} sessions, ${ref.visitors} visitors\n`;
+    }
+  }
+
+  // Top countries
+  if (topCountries && topCountries.length > 0) {
+    output += `\n### Top Countries\n`;
+    for (const c of topCountries.slice(0, 5)) {
+      output += `- ${c.country}: ${c.sessions} sessions, ${c.visitors} visitors\n`;
+    }
+  }
+
   // Recent insights
   if (recentInsights && recentInsights.length > 0) {
     output += `\n### Recent Insights\n`;
@@ -508,6 +524,13 @@ function formatVisitors(data: any): string {
 - **Last Visit:** ${new Date(visitor.lastVisitAt).toLocaleDateString()}
 `;
 
+    if (visitor.firstCountry) {
+      output += `- **Country:** ${visitor.firstCountry}\n`;
+    }
+    if (visitor.firstReferer && visitor.firstReferer !== 'direct') {
+      output += `- **Referrer:** ${visitor.firstReferer}\n`;
+    }
+
     if (visitor.profileSummary) {
       output += `- **Profile:** ${visitor.profileSummary}\n`;
     }
@@ -548,6 +571,14 @@ function formatVisitorDetail(data: any): string {
 **First Visit:** ${new Date(visitor.firstVisitAt).toLocaleDateString()}
 **Last Visit:** ${new Date(visitor.lastVisitAt).toLocaleDateString()}
 `;
+
+  if (visitor.firstCountry) {
+    output += `**Country:** ${visitor.firstCountry}\n`;
+  }
+
+  if (visitor.firstReferer && visitor.firstReferer !== 'direct') {
+    output += `**Referrer:** ${visitor.firstReferer}\n`;
+  }
 
   if (visitor.segmentName) {
     output += `**Segment:** ${visitor.segmentName}\n`;
