@@ -49,7 +49,7 @@ Documentation: https://github.com/Lcontext/Lcontext
 // Self-update command - runs async then exits
 if (args.includes('--update')) {
   import('fs').then(fs => import('os').then(os => {
-    const CURRENT_VERSION = '1.1.1';
+    const CURRENT_VERSION = '1.3.0';
     const GITHUB_REPO = 'Lcontext/Lcontext';
 
     const platform = os.platform();
@@ -129,7 +129,7 @@ import {
 import { z } from "zod";
 
 // Configuration
-const CURRENT_VERSION = "1.1.1";
+const CURRENT_VERSION = "1.3.0";
 const GITHUB_REPO = "Lcontext/Lcontext";
 const API_BASE_URL = process.env.LCONTEXT_API_URL || "https://lcontext.com";
 const API_KEY = process.env.LCONTEXT_API_KEY;
@@ -231,7 +231,8 @@ const getSessionsSchema = z.object({
   minDuration: z.number().optional().describe("Filter sessions with duration >= this value (seconds)"),
   maxDuration: z.number().optional().describe("Filter sessions with duration <= this value (seconds)"),
   minEventsCount: z.number().optional().describe("Filter sessions with events count >= this value"),
-  maxEventsCount: z.number().optional().describe("Filter sessions with events count <= this value")
+  maxEventsCount: z.number().optional().describe("Filter sessions with events count <= this value"),
+  pagePath: z.string().optional().describe("Filter sessions that visited a specific page path")
 });
 
 const getSessionDetailSchema = z.object({
@@ -307,6 +308,46 @@ ${page.title ? `**Title:** ${page.title}` : ''}
     for (const stat of stats.slice(0, 7)) {
       const date = new Date(stat.periodStart).toLocaleDateString();
       output += `| ${date} | Views: ${stat.viewCount} | Visitors: ${stat.uniqueVisitors} | Avg Duration: ${stat.avgDuration}s | Scroll: ${stat.avgScrollDepth}% |\n`;
+    }
+
+    // Aggregate and display page flow data
+    const allPrevPages = new Map<string, number>();
+    const allNextPages = new Map<string, number>();
+    for (const stat of stats) {
+      if (stat.topPreviousPages && Array.isArray(stat.topPreviousPages)) {
+        for (const p of stat.topPreviousPages) {
+          allPrevPages.set(p.path, (allPrevPages.get(p.path) || 0) + p.count);
+        }
+      }
+      if (stat.topNextPages && Array.isArray(stat.topNextPages)) {
+        for (const p of stat.topNextPages) {
+          allNextPages.set(p.path, (allNextPages.get(p.path) || 0) + p.count);
+        }
+      }
+    }
+
+    if (allPrevPages.size > 0 || allNextPages.size > 0) {
+      output += `\n### Page Flow\n`;
+
+      if (allPrevPages.size > 0) {
+        output += `**Where users came from:**\n`;
+        const sorted = Array.from(allPrevPages.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+        for (const [path, count] of sorted) {
+          output += `- ${path} (${count} navigations)\n`;
+        }
+      }
+
+      if (allNextPages.size > 0) {
+        output += `**Where users went next:**\n`;
+        const sorted = Array.from(allNextPages.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+        for (const [path, count] of sorted) {
+          output += `- ${path} (${count} navigations)\n`;
+        }
+      }
     }
 
     // Add AI summaries if available
@@ -672,6 +713,20 @@ function formatSessions(data: any): string {
 - **Events:** ${session.eventsCount || 0}
 `;
 
+    if (session.entryPage) {
+      output += `- **Entry Page:** ${session.entryPage}\n`;
+    }
+    if (session.exitPage) {
+      output += `- **Exit Page:** ${session.exitPage}\n`;
+    }
+    if (session.pageCount) {
+      output += `- **Pages Visited:** ${session.pageCount}`;
+      if (session.pagesVisited && Array.isArray(session.pagesVisited)) {
+        output += ` (${session.pagesVisited.join(', ')})`;
+      }
+      output += '\n';
+    }
+
     if (session.title) {
       output += `- **Title:** ${session.title}\n`;
     }
@@ -1024,6 +1079,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             maxEventsCount: {
               type: "number",
               description: "Filter sessions with events count <= this value"
+            },
+            pagePath: {
+              type: "string",
+              description: "Filter sessions that visited a specific page path"
             }
           }
         }
@@ -1104,7 +1163,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       for (const page of data.pages) {
         const firstSeen = new Date(page.firstSeenAt).toLocaleDateString();
         const lastSeen = new Date(page.lastSeenAt).toLocaleDateString();
-        output += `- **${page.path}**${page.title ? ` - ${page.title}` : ''} (first seen: ${firstSeen}, last seen: ${lastSeen})\n`;
+        let trafficInfo = '';
+        if (page.viewCount !== null && page.viewCount !== undefined) {
+          const bounceRate = page.viewCount > 0 && page.bounceCount != null
+            ? ((page.bounceCount / page.viewCount) * 100).toFixed(0)
+            : '?';
+          trafficInfo = ` | Views: ${page.viewCount}, Visitors: ${page.uniqueVisitors ?? '?'}, Bounce: ${bounceRate}%, Avg Duration: ${page.avgDuration ?? '?'}s, Scroll: ${page.avgScrollDepth ?? '?'}%`;
+        } else {
+          trafficInfo = ' | No recent traffic data';
+        }
+        output += `- **${page.path}**${page.title ? ` - ${page.title}` : ''} (${firstSeen} to ${lastSeen}${trafficInfo})\n`;
       }
 
       // Add data retention notice if present (indicates free plan limitations)
@@ -1270,6 +1338,7 @@ ${element.destinationUrl ? `- **Links to:** ${element.destinationUrl}` : ''}
       if (args.maxDuration !== undefined) params.append('maxDuration', args.maxDuration.toString());
       if (args.minEventsCount !== undefined) params.append('minEventsCount', args.minEventsCount.toString());
       if (args.maxEventsCount !== undefined) params.append('maxEventsCount', args.maxEventsCount.toString());
+      if (args.pagePath) params.append('pagePath', args.pagePath);
 
       const queryString = params.toString();
       const endpoint = `/api/mcp/sessions${queryString ? `?${queryString}` : ''}`;
