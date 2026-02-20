@@ -21,11 +21,11 @@
 // Handle CLI flags before importing heavy dependencies
 const args = process.argv.slice(2);
 if (args.includes('--version') || args.includes('-v')) {
-  console.log('1.1.1');
+  console.log('1.4.0');
   process.exit(0);
 }
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`lcontext v1.1.1
+  console.log(`lcontext v1.4.0
 
 MCP server for Lcontext page analytics.
 Provides page and element context for AI coding agents.
@@ -49,7 +49,7 @@ Documentation: https://github.com/Lcontext/Lcontext
 // Self-update command - runs async then exits
 if (args.includes('--update')) {
   import('fs').then(fs => import('os').then(os => {
-    const CURRENT_VERSION = '1.3.0';
+    const CURRENT_VERSION = '1.4.0';
     const GITHUB_REPO = 'Lcontext/Lcontext';
 
     const platform = os.platform();
@@ -124,12 +124,14 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
-  ListToolsRequestSchema
+  ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 // Configuration
-const CURRENT_VERSION = "1.3.0";
+const CURRENT_VERSION = "1.4.0";
 const GITHUB_REPO = "Lcontext/Lcontext";
 const API_BASE_URL = process.env.LCONTEXT_API_URL || "https://lcontext.com";
 const API_KEY = process.env.LCONTEXT_API_KEY;
@@ -239,6 +241,12 @@ const getSessionDetailSchema = z.object({
   sessionId: z.number().describe("The session's numeric ID")
 });
 
+const getUserFlowsSchema = z.object({
+  limit: z.number().optional().describe("Maximum flows to return (default: 10, max: 50)"),
+  category: z.string().optional().describe("Filter by category: conversion, exploration, onboarding, support, engagement"),
+  minSessions: z.number().optional().describe("Minimum session count for a flow to be included"),
+});
+
 // HTTP client helper
 async function apiRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
   if (!API_KEY) {
@@ -308,6 +316,16 @@ ${page.title ? `**Title:** ${page.title}` : ''}
     for (const stat of stats.slice(0, 7)) {
       const date = new Date(stat.periodStart).toLocaleDateString();
       output += `| ${date} | Views: ${stat.viewCount} | Visitors: ${stat.uniqueVisitors} | Avg Duration: ${stat.avgDuration}s | Scroll: ${stat.avgScrollDepth}% |\n`;
+    }
+
+    // Web Vitals summary from latest stat
+    const latestStatP = stats[0];
+    if (latestStatP && (latestStatP.avgLcp || latestStatP.avgFcp || latestStatP.avgFid || latestStatP.avgCls != null)) {
+      output += `\n### Performance (Web Vitals)\n`;
+      if (latestStatP.avgLcp) output += `- **LCP** (Largest Contentful Paint): ${latestStatP.avgLcp}ms\n`;
+      if (latestStatP.avgFcp) output += `- **FCP** (First Contentful Paint): ${latestStatP.avgFcp}ms\n`;
+      if (latestStatP.avgFid) output += `- **FID** (First Input Delay): ${latestStatP.avgFid}ms\n`;
+      if (latestStatP.avgCls != null) output += `- **CLS** (Cumulative Layout Shift): ${latestStatP.avgCls.toFixed(3)}\n`;
     }
 
     // Aggregate and display page flow data
@@ -413,7 +431,7 @@ ${element.destinationUrl ? `- Links to: ${element.destinationUrl}` : ''}
 
 // Helper function to format app context
 function formatAppContext(data: any): string {
-  const { stats, topPages, topEntryPages, topExitPages, topReferrers, topCountries, recentInsights, _dataRetention } = data;
+  const { stats, topPages, topEntryPages, topExitPages, topReferrers, topCountries, topDevices, topBrowsers, topOS, recentInsights, _dataRetention } = data;
 
   let output = `## Application Analytics Overview\n`;
 
@@ -520,6 +538,40 @@ function formatAppContext(data: any): string {
     }
   }
 
+  // Device breakdown
+  if (topDevices && topDevices.length > 0) {
+    output += `\n### Device Breakdown\n`;
+    for (const d of topDevices) {
+      output += `- ${d.deviceType}: ${d.sessions} sessions, ${d.visitors} visitors\n`;
+    }
+  }
+
+  // Top browsers
+  if (topBrowsers && topBrowsers.length > 0) {
+    output += `\n### Top Browsers\n`;
+    for (const b of topBrowsers.slice(0, 5)) {
+      output += `- ${b.browser}: ${b.sessions} sessions, ${b.visitors} visitors\n`;
+    }
+  }
+
+  // Top OS
+  if (topOS && topOS.length > 0) {
+    output += `\n### Top Operating Systems\n`;
+    for (const o of topOS.slice(0, 5)) {
+      output += `- ${o.os}: ${o.sessions} sessions, ${o.visitors} visitors\n`;
+    }
+  }
+
+  // Web Vitals (from latest stat period)
+  const latestStat = stats?.[0];
+  if (latestStat && (latestStat.avgLcp || latestStat.avgFcp || latestStat.avgFid || latestStat.avgCls != null)) {
+    output += `\n### Performance (Web Vitals)\n`;
+    if (latestStat.avgLcp) output += `- **LCP** (Largest Contentful Paint): ${latestStat.avgLcp}ms\n`;
+    if (latestStat.avgFcp) output += `- **FCP** (First Contentful Paint): ${latestStat.avgFcp}ms\n`;
+    if (latestStat.avgFid) output += `- **FID** (First Input Delay): ${latestStat.avgFid}ms\n`;
+    if (latestStat.avgCls != null) output += `- **CLS** (Cumulative Layout Shift): ${latestStat.avgCls.toFixed(3)}\n`;
+  }
+
   // Recent insights
   if (recentInsights && recentInsights.length > 0) {
     output += `\n### Recent Insights\n`;
@@ -565,7 +617,14 @@ function formatVisitors(data: any): string {
 - **Last Visit:** ${new Date(visitor.lastVisitAt).toLocaleDateString()}
 `;
 
-    if (visitor.firstCountry) {
+    if (visitor.deviceType || visitor.browser || visitor.os) {
+      const deviceParts = [visitor.deviceType, visitor.browser, visitor.os].filter(Boolean);
+      output += `- **Device:** ${deviceParts.join(' / ')}\n`;
+    }
+    if (visitor.city || visitor.region || visitor.firstCountry) {
+      const locParts = [visitor.city, visitor.region, visitor.firstCountry].filter(Boolean);
+      output += `- **Location:** ${locParts.join(', ')}\n`;
+    } else if (visitor.firstCountry) {
       output += `- **Country:** ${visitor.firstCountry}\n`;
     }
     if (visitor.firstReferer && visitor.firstReferer !== 'direct') {
@@ -613,7 +672,17 @@ function formatVisitorDetail(data: any): string {
 **Last Visit:** ${new Date(visitor.lastVisitAt).toLocaleDateString()}
 `;
 
-  if (visitor.firstCountry) {
+  if (visitor.deviceType || visitor.browser || visitor.os) {
+    output += `\n### Device Info\n`;
+    if (visitor.deviceType) output += `- **Device Type:** ${visitor.deviceType}\n`;
+    if (visitor.browser) output += `- **Browser:** ${visitor.browser}\n`;
+    if (visitor.os) output += `- **OS:** ${visitor.os}\n`;
+  }
+
+  if (visitor.city || visitor.region || visitor.firstCountry) {
+    const locParts = [visitor.city, visitor.region, visitor.firstCountry].filter(Boolean);
+    output += `**Location:** ${locParts.join(', ')}\n`;
+  } else if (visitor.firstCountry) {
     output += `**Country:** ${visitor.firstCountry}\n`;
   }
 
@@ -674,7 +743,9 @@ function formatVisitorDetail(data: any): string {
       if (session.description) {
         output += `${session.description}\n`;
       }
-      output += `Duration: ${session.duration || 0}s | Events: ${session.eventsCount || 0}\n`;
+      output += `Duration: ${session.duration || 0}s | Events: ${session.eventsCount || 0}`;
+      if (session.deviceType) output += ` | Device: ${session.deviceType}`;
+      output += '\n';
     }
   }
 
@@ -713,6 +784,9 @@ function formatSessions(data: any): string {
 - **Events:** ${session.eventsCount || 0}
 `;
 
+    if (session.deviceType) {
+      output += `- **Device:** ${session.deviceType}\n`;
+    }
     if (session.entryPage) {
       output += `- **Entry Page:** ${session.entryPage}\n`;
     }
@@ -757,6 +831,14 @@ function formatSessionDetail(data: any): string {
   output += `**Duration:** ${session.duration || 0}s\n`;
   output += `**Events:** ${session.eventsCount || 0}\n`;
 
+  if (session.deviceType) {
+    output += `**Device:** ${session.deviceType}\n`;
+  }
+  if (session.region || session.city) {
+    const locationParts = [session.city, session.region, session.country].filter(Boolean);
+    output += `**Location:** ${locationParts.join(', ')}\n`;
+  }
+
   if (session.title) {
     output += `**Title:** ${session.title}\n`;
   }
@@ -764,6 +846,16 @@ function formatSessionDetail(data: any): string {
   if (visitor) {
     output += `\n### Visitor Context\n`;
     output += `**Visitor ID:** ${visitor.visitorId}\n`;
+    if (visitor.browser || visitor.os) {
+      output += `**Browser/OS:** ${[visitor.browser, visitor.os].filter(Boolean).join(' / ')}\n`;
+    }
+    if (visitor.deviceType) {
+      output += `**Device Type:** ${visitor.deviceType}\n`;
+    }
+    if (visitor.region || visitor.city) {
+      const locParts = [visitor.city, visitor.region].filter(Boolean);
+      output += `**Location:** ${locParts.join(', ')}\n`;
+    }
     if (visitor.profileTitle) {
       output += `**Profile:** ${visitor.profileTitle}\n`;
     }
@@ -867,14 +959,236 @@ function formatSessionDetail(data: any): string {
   return output.trim();
 }
 
+function formatUserFlows(data: any): string {
+  const { flows, total, periodStart, periodEnd, _dataRetention } = data;
+
+  let output = `## User Journey Patterns\n\n`;
+  output += `Found ${total} detected journey patterns`;
+  if (periodStart && periodEnd) {
+    output += ` (${new Date(periodStart).toLocaleDateString()} to ${new Date(periodEnd).toLocaleDateString()})`;
+  }
+  output += `:\n`;
+
+  if (!flows || flows.length === 0) {
+    output += "\nNo user flows detected yet. Flows are generated daily from session data.\n";
+    return output.trim();
+  }
+
+  for (const flow of flows) {
+    const sentimentTotal = (flow.positiveSessions || 0) + (flow.negativeSessions || 0) + (flow.neutralSessions || 0);
+    const positiveRate = sentimentTotal > 0
+      ? Math.round((flow.positiveSessions / sentimentTotal) * 100)
+      : 0;
+
+    output += `\n### ${flow.name}`;
+    if (flow.category) output += ` [${flow.category}]`;
+    output += `\n`;
+    output += `**Path:** ${(flow.canonicalPath || []).join(' \u2192 ')}\n`;
+    output += `- **Sessions:** ${flow.sessionCount} (${flow.visitorCount} unique visitors)\n`;
+    output += `- **Avg Duration:** ${flow.avgDuration || 0}s | **Avg Pages:** ${flow.avgPageCount || 0}\n`;
+    output += `- **Sentiment:** ${positiveRate}% positive`;
+    if (flow.negativeSessions > 0) {
+      output += ` | ${flow.negativeSessions} negative sessions`;
+    }
+    output += `\n`;
+    output += `${flow.description}\n`;
+
+    if (flow.dropOffSteps && flow.dropOffSteps.length > 0) {
+      output += `**Drop-off funnel:**\n`;
+      for (const step of flow.dropOffSteps) {
+        const barLen = Math.round((step.continueRate || 0) / 5);
+        const bar = '\u2588'.repeat(barLen);
+        output += `  ${step.page}: ${bar} ${step.continueRate}%\n`;
+      }
+    }
+
+    if (flow.variantCount && flow.variantCount > 1) {
+      output += `*${flow.variantCount} path variants detected*\n`;
+    }
+  }
+
+  if (_dataRetention) {
+    output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan).*\n`;
+  }
+
+  return output.trim();
+}
+
 // Initialize MCP server
 const server = new Server({
   name: "lcontext-mcp",
-  version: "1.0.0"
+  version: "1.4.0"
 }, {
   capabilities: {
-    tools: {}
+    tools: {},
+    prompts: {}
   }
+});
+
+// Analytics guide prompt content (from skill.md)
+const ANALYTICS_GUIDE = `You have access to Lcontext MCP tools that provide raw user behavior data for the application you're working on. Use this guide to analyze user behavior, identify issues, and connect findings to code changes.
+
+There are no pre-computed summaries or AI-generated insights — you analyze the raw metrics and event timelines directly.
+
+## Available Tools
+
+| Tool | Purpose | Key Data |
+|------|---------|----------|
+| get_app_context | App-wide stats and trends | Sessions, visitors, page views, clicks, form submits, bounce rate, top pages/referrers/countries, device breakdown (mobile/tablet/desktop), top browsers, top OS, Web Vitals (LCP, FCP, FID, CLS) |
+| list_pages | Discover tracked pages | Page paths, titles, first/last seen dates, view count, bounce/entry/exit counts |
+| get_page_context | Per-page stats + interactive elements | View count, unique visitors, bounce/entry/exit counts, avg duration, scroll depth, Web Vitals (LCP, FCP, FID, CLS), element interactions |
+| get_element_context | Element interaction data | Interaction count, unique visitors, per-period breakdown |
+| get_visitors | Visitor list with profiles | Session count, first/last visit, country, referrer, device type, browser, OS, city, region |
+| get_visitor_detail | Visitor's full session history | All sessions with timestamps and event counts, device info (type, browser, OS), location (city, region) |
+| get_sessions | Session list | Duration, event count, start time, visitor ID, device type |
+| get_session_detail | Full event timeline | Every event: page_view, click, form_submit, scroll_depth, web_vital — with timestamps, element details, device type, location (city, region, country), visitor browser/OS |
+| get_user_flows | Auto-detected user journeys | Named flow patterns with page sequences, session/visitor counts, sentiment distribution, drop-off funnels |
+
+## Analysis Workflow
+
+Work top-down — start with aggregate metrics, then narrow based on what you find.
+
+### Phase 1: App Overview
+Use get_app_context. From the daily/weekly stats, calculate:
+- Traffic trend: Compare recent days — are sessions rising, stable, or dropping?
+- Bounce rate: bounceCount / totalSessions — above 60% is concerning
+- Click-through rate: totalClicks / totalPageViews — are users engaging or just viewing?
+- Form conversion: totalFormSubmits / totalSessions — are forms being completed?
+- Top exit pages: Where users leave most — these are your problem areas
+- Top entry pages: Where users arrive — these need to work perfectly
+- Referrer distribution: Where traffic comes from — correlate with quality
+- Device breakdown: topDevices/topBrowsers/topOS — is mobile experience underperforming?
+- Web Vitals: avgLcp, avgFcp, avgFid, avgCls — are there site-wide performance issues?
+
+### Phase 2: Map the App
+Use list_pages. Build a mental model of the application's page structure:
+- Group pages into flows (onboarding, checkout, settings, etc.)
+- Note which pages have recent activity vs stale
+- Cross-reference with top exit pages from Phase 1
+
+### Phase 3: Page Deep-Dive
+Use get_page_context(path) for problem pages. Analyze:
+- Bounce rate: bounceCount / entryCount — users who entered and immediately left
+- Exit rate: exitCount / viewCount — proportion of visits that end here
+- Scroll depth: <30% means content below the fold isn't seen
+- Avg duration: <5s on content-heavy pages = users aren't reading
+- Entry vs exit ratio: More exits than entries = this page is losing users
+- Web Vitals: avgLcp, avgFcp, avgFid, avgCls — per-page performance (LCP >2.5s or CLS >0.1 = problem)
+
+Element analysis (from the elements section):
+- Calculate each element's interaction rate: interactionCount / page viewCount
+- Elements with 0 interactions on a high-traffic page = invisible or broken
+- Forms with views but no submits = form friction
+
+### Phase 4: Funnel Analysis
+For multi-step flows (signup, checkout, intake):
+1. Get get_page_context for each step
+2. Line up viewCounts in sequence: Step 1 → Step 2 → Step 3...
+3. Calculate step-to-step drop-off: (step N views - step N+1 views) / step N views
+4. The step with the biggest drop-off is your #1 problem
+
+### Phase 5: Session Investigation
+Use get_sessions then get_session_detail(sessionId). Sessions include deviceType (mobile/tablet/desktop).
+In the event timeline, look for:
+- Rapid repeated clicks on same element (timestamps <500ms apart) = rage clicking
+- Long gaps between events (>30s) = user confused or waiting
+- page_view → no further events = content mismatch, user bounced
+- form_submit followed by same page_view = form error or redirect loop
+- Multiple scroll_depth events reaching 100% without clicks = user searching for something not there
+- web_vital red flags: LCP >2.5s, CLS >0.1, FID >100ms
+Session detail also includes region, city, and visitor browser/os.
+
+### Phase 6: Visitor Patterns
+Use get_visitors and get_visitor_detail(visitorId). Visitors include deviceType, browser, os, city, region. Identify:
+- Single-session visitors with high bounce = acquisition quality issue
+- Multi-session visitors who stop returning = something broke their experience
+- Country/region-specific patterns = localization or performance issues
+- Browser-specific issues = check if negative sessions cluster on a particular browser/OS
+- Mobile vs desktop behavior = compare engagement metrics by device type
+
+## Decision Trees
+
+### "Something is wrong but I don't know what"
+1. get_app_context → compare today vs previous days
+2. If bounce rate increased → find top exit pages → get_page_context for each
+3. If traffic dropped → check top referrers — did a referral source dry up?
+4. If clicks dropped but views stable → UI change broke interactivity
+
+### "This page isn't converting"
+1. get_page_context(path) → check entry/exit ratio and element interactions
+2. Find the primary CTA → is interaction count proportional to views?
+3. If CTA interactions are low → check scroll depth (is the CTA visible?)
+4. Pick 3-5 sessions → get_session_detail → trace what users did instead of converting
+5. Look at the page code — is the CTA prominent? Is the handler working?
+
+### "Users are dropping off in a funnel"
+1. get_page_context for each funnel step → compare view counts step-to-step
+2. Biggest drop-off = your problem step
+3. On that step: check element interactions, scroll depth, duration
+4. get_sessions → find sessions that visited the drop-off page but NOT the next step
+5. get_session_detail → what happened right before they left?
+
+### "A feature isn't being used"
+1. Find the page(s) with the feature → get_page_context
+2. Find the element(s) → get_element_context
+3. If page has views but element has 0 interactions → UI discoverability issue
+4. If page has low views → navigation/routing issue
+
+### "Performance feels slow"
+1. get_app_context → check avgLcp, avgFcp, avgFid, avgCls for site-wide overview
+2. get_page_context for suspect pages → check per-page Web Vitals
+3. get_session_detail for recent sessions → check individual web_vital events
+4. LCP >2.5s → check for large images, blocking JS, slow API calls
+5. CLS >0.1 → check for dynamic content, images without dimensions, font loading
+6. FID >100ms → check for heavy JS execution on page load
+
+## Connecting Findings to Code
+
+| Analytics Finding | Code Investigation |
+|---|---|
+| High exit rate on page X | Check the route handler for errors/redirects, review the component's UX flow |
+| Element with 0 interactions | Find the component, check CSS visibility, check if click handler is bound |
+| Form with low submit rate | Check validation logic, error message rendering, required field handling |
+| Slow LCP | Look for large images, unoptimized bundles, blocking API calls in the component |
+| High CLS | Check for dynamically inserted content, images without width/height, late-loading fonts |
+| Rage clicks on element | Check the click handler — is it async without loading state? Does it fail silently? |
+| Users revisiting same page | Check for missing success feedback, unclear navigation, broken back-button behavior |
+| Drop-off after form submit | Check form action URL, redirect logic, success/error page rendering |
+| Low scroll depth | Key content or CTA may be below the fold — check the layout |
+| Short duration on content page | Content may not match what the user expected — check the page title, meta, referrer landing |
+| Mobile bounce rate much higher than desktop | Check responsive layout, touch targets, viewport meta tag, mobile-specific CSS |
+| Browser-specific negative sessions | Check for unsupported APIs, CSS features, or polyfills needed for that browser |`;
+
+// List available prompts
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  return {
+    prompts: [
+      {
+        name: "analytics-guide",
+        description: "Comprehensive guide for analyzing user behavior data with Lcontext tools. Includes analysis workflows, decision trees, and how to connect analytics findings to code changes."
+      }
+    ]
+  };
+});
+
+// Get prompt content
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  if (request.params.name === "analytics-guide") {
+    return {
+      description: "Lcontext Analytics Guide — workflows, decision trees, and code investigation patterns",
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: ANALYTICS_GUIDE
+          }
+        }
+      ]
+    };
+  }
+
+  throw new Error(`Unknown prompt: ${request.params.name}`);
 });
 
 // List available tools
@@ -1099,6 +1413,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           },
           required: ["sessionId"]
+        }
+      },
+      {
+        name: "get_user_flows",
+        description: "Get automatically detected user journey patterns showing how users navigate through the application. Each flow represents a common page sequence with engagement metrics, drop-off points, and sentiment data. Use this to understand conversion funnels, identify friction points, and discover popular navigation paths.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            limit: {
+              type: "number",
+              description: "Maximum flows to return (default: 10, max: 50)"
+            },
+            category: {
+              type: "string",
+              enum: ["conversion", "exploration", "onboarding", "support", "engagement", "other"],
+              description: "Filter by flow category"
+            },
+            minSessions: {
+              type: "number",
+              description: "Minimum session count for a flow to be included"
+            }
+          }
         }
       }
     ]
@@ -1362,6 +1698,29 @@ ${element.destinationUrl ? `- **Links to:** ${element.destinationUrl}` : ''}
 
       const data = await apiRequest(endpoint);
       const contextOutput = formatSessionDetail(data);
+
+      return {
+        content: [{
+          type: "text",
+          text: contextOutput
+        }]
+      };
+    }
+
+    // GET_USER_FLOWS tool
+    if (request.params.name === "get_user_flows") {
+      const args = getUserFlowsSchema.parse(request.params.arguments || {});
+
+      const params = new URLSearchParams();
+      if (args.limit) params.append('limit', args.limit.toString());
+      if (args.category) params.append('category', args.category);
+      if (args.minSessions !== undefined) params.append('minSessions', args.minSessions.toString());
+
+      const queryString = params.toString();
+      const endpoint = `/api/mcp/flows${queryString ? `?${queryString}` : ''}`;
+
+      const data = await apiRequest(endpoint);
+      const contextOutput = formatUserFlows(data);
 
       return {
         content: [{

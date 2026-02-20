@@ -15,6 +15,35 @@ else
     BASE_URL="${LCONTEXT_BASE_URL:-https://github.com/${GITHUB_REPO}/releases/latest/download}"
 fi
 
+INSTALL_VERSION="${LCONTEXT_VERSION:-latest}"
+DOWNLOAD_TOOL="unknown"
+DOWNLOAD_DURATION_MS=0
+
+# Telemetry: report install metrics (fire-and-forget, never blocks or fails install)
+send_telemetry() {
+    local success="$1"
+    local api_key_configured="false"
+    if [ -n "${API_KEY:-}" ]; then
+        api_key_configured="true"
+    fi
+
+    local telemetry_url="https://lcontext.com/api/track-install"
+    local json_payload="{\"platform\":\"${PLATFORM:-unknown}\",\"success\":${success},\"version\":\"${INSTALL_VERSION}\",\"apiKeyConfigured\":${api_key_configured},\"downloadTool\":\"${DOWNLOAD_TOOL}\",\"downloadDurationMs\":${DOWNLOAD_DURATION_MS:-0},\"binarySize\":${DOWNLOAD_SIZE:-0}}"
+
+    if command -v curl &> /dev/null; then
+        curl -sS -X POST "${telemetry_url}" \
+            -H "Content-Type: application/json" \
+            -d "${json_payload}" \
+            --max-time 5 \
+            > /dev/null 2>&1 &
+    elif command -v wget &> /dev/null; then
+        wget -q --timeout=5 -O /dev/null --post-data="${json_payload}" \
+            --header="Content-Type: application/json" \
+            "${telemetry_url}" \
+            > /dev/null 2>&1 &
+    fi
+}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -103,23 +132,32 @@ TEMP_FILE="/tmp/${DOWNLOAD_NAME}"
 echo "Downloading from ${DOWNLOAD_URL}..."
 
 DOWNLOAD_EXIT_CODE=0
+DOWNLOAD_START=$(date +%s%N 2>/dev/null || echo "0")
 if command -v curl &> /dev/null; then
+    DOWNLOAD_TOOL="curl"
     curl -fSL --progress-bar "${DOWNLOAD_URL}" -o "${TEMP_FILE}" || DOWNLOAD_EXIT_CODE=$?
 elif command -v wget &> /dev/null; then
+    DOWNLOAD_TOOL="wget"
     wget -q --show-progress "${DOWNLOAD_URL}" -O "${TEMP_FILE}" || DOWNLOAD_EXIT_CODE=$?
 else
     echo -e "${RED}Error: Neither curl nor wget found. Please install one of them.${NC}"
     exit 1
 fi
+DOWNLOAD_END=$(date +%s%N 2>/dev/null || echo "0")
+if [ "$DOWNLOAD_START" != "0" ] && [ "$DOWNLOAD_END" != "0" ]; then
+    DOWNLOAD_DURATION_MS=$(( (DOWNLOAD_END - DOWNLOAD_START) / 1000000 ))
+fi
 
 if [ $DOWNLOAD_EXIT_CODE -ne 0 ]; then
     echo -e "${RED}Error: Download failed with exit code $DOWNLOAD_EXIT_CODE${NC}"
+    send_telemetry "false"
     exit 1
 fi
 
 # Verify download exists and has content
 if [ ! -f "${TEMP_FILE}" ]; then
     echo -e "${RED}Error: Download failed - file not created${NC}"
+    send_telemetry "false"
     exit 1
 fi
 
@@ -127,6 +165,7 @@ DOWNLOAD_SIZE=$(stat -c%s "${TEMP_FILE}" 2>/dev/null || stat -f%z "${TEMP_FILE}"
 if [ "$DOWNLOAD_SIZE" -lt 1000000 ]; then
     echo -e "${RED}Error: Download appears incomplete (only ${DOWNLOAD_SIZE} bytes)${NC}"
     echo -e "${RED}Expected a binary file of ~100MB. The server may be down or returning an error.${NC}"
+    send_telemetry "false"
     rm -f "${TEMP_FILE}"
     exit 1
 fi
@@ -314,6 +353,9 @@ else
 }
 CONFIGEOF
 fi
+
+# Send installation telemetry (background, non-blocking)
+send_telemetry "true"
 
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

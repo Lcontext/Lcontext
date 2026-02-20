@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://img.shields.io/npm/v/lcontext-mcp.svg)](https://www.npmjs.com/package/lcontext-mcp)
 
-MCP server for [Lcontext](https://lcontext.com) behavioral analytics. Provides comprehensive behavioral analytics context for AI coding agents, including page metrics, visitor profiles, session data, and AI-generated insights.
+MCP server for [Lcontext](https://lcontext.com) behavioral analytics. Provides comprehensive behavioral analytics context for AI coding agents, including page metrics, visitor profiles, session data, device/browser breakdowns, Web Vitals, user journey patterns, and AI-generated insights.
 
 **Works with:** Claude Code, Claude Desktop, Cursor, Windsurf, Cline, and any MCP-compatible AI coding tool.
 
@@ -210,7 +210,7 @@ Refer to your tool's documentation for MCP server configuration.
 
 ### `get_page_context`
 
-Get comprehensive behavioral analytics context for a page including stats, visitor metrics, and all interactive elements with their engagement data.
+Get comprehensive analytics context for a page including stats, visitor metrics, Web Vitals (LCP, FCP, FID, CLS), and all interactive elements with their engagement data.
 
 **Parameters:**
 - `path` (required): The page path (e.g., `/products`, `/checkout`)
@@ -252,7 +252,7 @@ Show me analytics for the "Add to Cart" button
 
 ### `get_app_context`
 
-Get application-wide behavioral analytics including total sessions, visitors, page views, engagement metrics, and AI-generated insights.
+Get application-wide analytics including sessions, visitors, page views, engagement metrics, device breakdown (mobile/tablet/desktop), top browsers, top OS, Web Vitals (LCP, FCP, FID, CLS), and AI-generated insights.
 
 **Parameters:**
 - `periodType` (optional): `day` or `week` (default: `day`)
@@ -265,7 +265,7 @@ Give me an overview of my app's behavioral analytics for the last week
 
 ### `get_visitors`
 
-Get a list of visitors with AI-generated profiles, interests, engagement trends, and segment assignments.
+Get a list of visitors with AI-generated profiles, interests, engagement trends, segment assignments, device info (type, browser, OS), and location (city, region, country).
 
 **Parameters:**
 - `limit` (optional): Maximum visitors to return (default: 20, max: 100)
@@ -286,7 +286,7 @@ Show me visitors with increasing engagement trend
 
 ### `get_visitor_detail`
 
-Get detailed profile and recent sessions for a specific visitor.
+Get detailed profile and recent sessions for a specific visitor, including device info (type, browser, OS) and location.
 
 **Parameters:**
 - `visitorId` (required): The visitor's unique identifier
@@ -298,7 +298,7 @@ Get the full profile for visitor abc123
 
 ### `get_sessions`
 
-Get a list of user sessions with AI-generated summaries, titles, and sentiment analysis.
+Get a list of user sessions with AI-generated summaries, titles, sentiment analysis, and device type.
 
 **Parameters:**
 - `limit` (optional): Maximum sessions to return (default: 20, max: 100)
@@ -312,6 +312,7 @@ Get a list of user sessions with AI-generated summaries, titles, and sentiment a
 - `maxDuration` (optional): Maximum session duration in seconds
 - `minEventsCount` (optional): Minimum number of events
 - `maxEventsCount` (optional): Maximum number of events
+- `pagePath` (optional): Filter sessions that visited a specific page path
 
 **Example:**
 ```
@@ -320,7 +321,7 @@ Show me negative sentiment sessions from the last 24 hours
 
 ### `get_session_detail`
 
-Get detailed information about a specific session including full event data and visitor context.
+Get detailed information about a specific session including full event timeline, visitor context, device type, and location (city, region, country).
 
 **Parameters:**
 - `sessionId` (required): The session's numeric ID
@@ -329,6 +330,28 @@ Get detailed information about a specific session including full event data and 
 ```
 Show me the details of session 12345
 ```
+
+### `get_user_flows`
+
+Get automatically detected user journey patterns showing how users navigate through the application. Each flow represents a common page sequence with engagement metrics, drop-off points, and sentiment data.
+
+**Parameters:**
+- `limit` (optional): Maximum flows to return (default: 10, max: 50)
+- `category` (optional): Filter by category: `conversion`, `exploration`, `onboarding`, `support`, `engagement`, `other`
+- `minSessions` (optional): Minimum session count for a flow to be included
+
+**Example:**
+```
+Show me the most common user journeys on my app
+```
+
+## Prompts
+
+### `analytics-guide`
+
+A comprehensive guide for analyzing user behavior data with Lcontext tools. Includes step-by-step analysis workflows, decision trees for common scenarios (e.g., "this page isn't converting", "performance feels slow"), and a reference table connecting analytics findings to code investigations.
+
+AI agents can request this prompt to get expert-level guidance on how to use the tools effectively.
 
 ## Updating
 
