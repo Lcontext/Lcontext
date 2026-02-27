@@ -11,21 +11,22 @@
  * - get_page_context: Get page analytics, stats, and related elements for a given path and time range
  * - list_pages: List all tracked pages for the authenticated website
  * - get_element_context: Get detailed analytics for a specific element
- * - get_app_context: Get application-wide analytics including sessions, visitors, and AI insights
- * - get_visitors: Get visitors list with AI-generated profiles and segment assignments
- * - get_visitor_detail: Get detailed profile and sessions for a specific visitor
- * - get_sessions: Get sessions list with AI summaries and sentiment analysis
- * - get_session_detail: Get detailed session info including events and visitor context
+ * - get_app_context: Get application-wide analytics including sessions, visitors, page views, and engagement metrics
+ * - get_visitors: Get visitors list with session counts, device info, and location data
+ * - get_visitor_detail: Get detailed session history for a specific visitor
+ * - get_sessions: Get sessions list with duration, events count, pages visited, and device info
+ * - get_session_detail: Get detailed session info including full event timeline and visitor context
+ * - get_analysis: Get pre-computed daily/weekly analysis report with problem areas, recommendations, and specific IDs
  */
 
 // Handle CLI flags before importing heavy dependencies
 const args = process.argv.slice(2);
 if (args.includes('--version') || args.includes('-v')) {
-  console.log('1.4.0');
+  console.log('2026.2.26');
   process.exit(0);
 }
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`lcontext v1.4.0
+  console.log(`lcontext v2026.2.26
 
 MCP server for Lcontext page analytics.
 Provides page and element context for AI coding agents.
@@ -49,7 +50,7 @@ Documentation: https://github.com/Lcontext/Lcontext
 // Self-update command - runs async then exits
 if (args.includes('--update')) {
   import('fs').then(fs => import('os').then(os => {
-    const CURRENT_VERSION = '1.4.0';
+    const CURRENT_VERSION = '2026.2.26';
     const GITHUB_REPO = 'Lcontext/Lcontext';
 
     const platform = os.platform();
@@ -131,7 +132,7 @@ import {
 import { z } from "zod";
 
 // Configuration
-const CURRENT_VERSION = "1.4.0";
+const CURRENT_VERSION = "2026.2.26";
 const GITHUB_REPO = "Lcontext/Lcontext";
 const API_BASE_URL = process.env.LCONTEXT_API_URL || "https://lcontext.com";
 const API_KEY = process.env.LCONTEXT_API_KEY;
@@ -209,13 +210,11 @@ const getVisitorsSchema = z.object({
   limit: z.number().optional().default(20).describe("Maximum number of visitors to return (default: 20, max: 100)"),
   offset: z.number().optional().default(0).describe("Offset for pagination"),
   segmentId: z.number().optional().describe("Filter by segment ID"),
-  search: z.string().optional().describe("Search in visitor ID, title, summary, interests, goals, action, evidence"),
+  search: z.string().optional().describe("Search in visitor ID"),
   firstVisitAfter: z.string().optional().describe("Filter visitors who first visited after this date (ISO format)"),
   firstVisitBefore: z.string().optional().describe("Filter visitors who first visited before this date (ISO format)"),
   lastVisitAfter: z.string().optional().describe("Filter visitors who last visited after this date (ISO format)"),
-  lastVisitBefore: z.string().optional().describe("Filter visitors who last visited before this date (ISO format)"),
-  engagementTrend: z.enum(["increasing", "stable", "decreasing"]).optional().describe("Filter by engagement trend"),
-  overallSentiment: z.enum(["positive", "negative", "neutral", "mixed"]).optional().describe("Filter by overall sentiment")
+  lastVisitBefore: z.string().optional().describe("Filter visitors who last visited before this date (ISO format)")
 });
 
 const getVisitorDetailSchema = z.object({
@@ -226,15 +225,14 @@ const getSessionsSchema = z.object({
   limit: z.number().optional().default(20).describe("Maximum number of sessions to return (default: 20, max: 100)"),
   offset: z.number().optional().default(0).describe("Offset for pagination"),
   visitorId: z.string().optional().describe("Filter sessions by visitor ID"),
-  sentiment: z.enum(["positive", "negative", "neutral"]).optional().describe("Filter by session sentiment"),
   startDate: z.string().optional().describe("Start date for filtering (ISO format)"),
   endDate: z.string().optional().describe("End date for filtering (ISO format)"),
-  search: z.string().optional().describe("Search in session title and description"),
   minDuration: z.number().optional().describe("Filter sessions with duration >= this value (seconds)"),
   maxDuration: z.number().optional().describe("Filter sessions with duration <= this value (seconds)"),
   minEventsCount: z.number().optional().describe("Filter sessions with events count >= this value"),
   maxEventsCount: z.number().optional().describe("Filter sessions with events count <= this value"),
-  pagePath: z.string().optional().describe("Filter sessions that visited a specific page path")
+  pagePath: z.string().optional().describe("Filter sessions that visited a specific page path"),
+  includeAll: z.boolean().optional().describe("Include all session types (bot, preview, automated). By default only real_user sessions are returned.")
 });
 
 const getSessionDetailSchema = z.object({
@@ -245,6 +243,12 @@ const getUserFlowsSchema = z.object({
   limit: z.number().optional().describe("Maximum flows to return (default: 10, max: 50)"),
   category: z.string().optional().describe("Filter by category: conversion, exploration, onboarding, support, engagement"),
   minSessions: z.number().optional().describe("Minimum session count for a flow to be included"),
+  periodType: z.enum(["day", "week"]).optional().describe("Period type: 'day' for daily flows, 'week' for weekly aggregated flows"),
+});
+
+const getAnalysisSchema = z.object({
+  periodType: z.enum(["day", "week"]).optional().default("day").describe("Period type: 'day' for daily report, 'week' for weekly report"),
+  date: z.string().optional().describe("ISO date string for the period start (e.g., '2026-02-23'). Defaults to most recent completed analysis."),
 });
 
 // HTTP client helper
@@ -368,16 +372,6 @@ ${page.title ? `**Title:** ${page.title}` : ''}
       }
     }
 
-    // Add AI summaries if available
-    const summaries = stats.filter((stat: any) => stat.aiSummary);
-    if (summaries.length > 0) {
-      output += `\n### AI Insights\n`;
-      for (const stat of summaries) {
-        const date = new Date(stat.periodStart).toLocaleDateString();
-        const updatedAt = stat.aiSummaryUpdatedAt ? new Date(stat.aiSummaryUpdatedAt).toLocaleDateString() : 'Unknown';
-        output += `\n**${stat.periodType === 'week' ? 'Week of' : ''} ${date}** (updated: ${updatedAt})\n${stat.aiSummary}\n`;
-      }
-    }
   }
 
   output += `
@@ -431,7 +425,7 @@ ${element.destinationUrl ? `- Links to: ${element.destinationUrl}` : ''}
 
 // Helper function to format app context
 function formatAppContext(data: any): string {
-  const { stats, topPages, topEntryPages, topExitPages, topReferrers, topCountries, topDevices, topBrowsers, topOS, recentInsights, _dataRetention } = data;
+  const { stats, topPages, topEntryPages, topExitPages, topReferrers, topCountries, topDevices, topBrowsers, topOS, _dataRetention } = data;
 
   let output = `## Application Analytics Overview\n`;
 
@@ -447,10 +441,7 @@ function formatAppContext(data: any): string {
       totalClicks: acc.totalClicks + (stat.totalClicks || 0),
       totalFormSubmits: acc.totalFormSubmits + (stat.totalFormSubmits || 0),
       bounces: acc.bounces + (stat.bounceCount || 0),
-      positiveSessions: acc.positiveSessions + (stat.positiveSessions || 0),
-      negativeSessions: acc.negativeSessions + (stat.negativeSessions || 0),
-      neutralSessions: acc.neutralSessions + (stat.neutralSessions || 0)
-    }), { sessions: 0, uniqueVisitors: 0, newVisitors: 0, pageViews: 0, totalClicks: 0, totalFormSubmits: 0, bounces: 0, positiveSessions: 0, negativeSessions: 0, neutralSessions: 0 });
+    }), { sessions: 0, uniqueVisitors: 0, newVisitors: 0, pageViews: 0, totalClicks: 0, totalFormSubmits: 0, bounces: 0 });
 
     // Calculate averages from individual stats
     const avgSessionDuration = stats.length > 0
@@ -477,9 +468,6 @@ function formatAppContext(data: any): string {
 - **Avg Events Per Session:** ${avgEventsPerSession}
 - **Bounce Rate:** ${bounceRate}%
 
-### Session Sentiment
-- Positive: ${totals.positiveSessions} | Neutral: ${totals.neutralSessions} | Negative: ${totals.negativeSessions}
-
 ### Daily Breakdown
 `;
     for (const stat of stats.slice(0, 7)) {
@@ -487,15 +475,6 @@ function formatAppContext(data: any): string {
       output += `| ${date} | Sessions: ${stat.totalSessions} | Visitors: ${stat.uniqueVisitors} | Pages/Session: ${stat.avgPagesPerSession || 0} | Clicks: ${stat.totalClicks || 0} | Bounce: ${stat.bounceRate}% |\n`;
     }
 
-    // Add AI summaries if available
-    const summaries = stats.filter((stat: any) => stat.aiSummary);
-    if (summaries.length > 0) {
-      output += `\n### AI Insights\n`;
-      for (const stat of summaries.slice(0, 3)) {
-        const date = new Date(stat.periodStart).toLocaleDateString();
-        output += `\n**${stat.periodType === 'week' ? 'Week of' : ''} ${date}**\n${stat.aiSummary}\n`;
-      }
-    }
   }
 
   // Top pages
@@ -572,15 +551,6 @@ function formatAppContext(data: any): string {
     if (latestStat.avgCls != null) output += `- **CLS** (Cumulative Layout Shift): ${latestStat.avgCls.toFixed(3)}\n`;
   }
 
-  // Recent insights
-  if (recentInsights && recentInsights.length > 0) {
-    output += `\n### Recent Insights\n`;
-    for (const insight of recentInsights.slice(0, 3)) {
-      const date = new Date(insight.createdAt).toLocaleDateString();
-      output += `\n**${insight.title}** (${date})\n${insight.content}\n`;
-    }
-  }
-
   // Add data retention notice if present
   if (_dataRetention) {
     output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
@@ -605,14 +575,9 @@ function formatVisitors(data: any): string {
   }
 
   for (const visitor of visitors) {
-    const sentiment = visitor.overallSentiment ? ` | ${visitor.overallSentiment}` : '';
-    const trend = visitor.engagementTrend ? ` | Trend: ${visitor.engagementTrend}` : '';
-    const segment = visitor.segmentName ? ` | Segment: ${visitor.segmentName} (ID: ${visitor.segmentId})` : '';
-
     output += `
-### ${visitor.profileTitle || visitor.visitorId}
-- **Visitor ID:** ${visitor.visitorId}
-- **Sessions:** ${visitor.sessionCount}${sentiment}${trend}${segment}
+### ${visitor.visitorId}
+- **Sessions:** ${visitor.sessionCount}
 - **First Visit:** ${new Date(visitor.firstVisitAt).toLocaleDateString()}
 - **Last Visit:** ${new Date(visitor.lastVisitAt).toLocaleDateString()}
 `;
@@ -630,26 +595,6 @@ function formatVisitors(data: any): string {
     if (visitor.firstReferer && visitor.firstReferer !== 'direct') {
       output += `- **Referrer:** ${visitor.firstReferer}\n`;
     }
-
-    if (visitor.profileSummary) {
-      output += `- **Profile:** ${visitor.profileSummary}\n`;
-    }
-
-    if (visitor.primaryInterests && visitor.primaryInterests.length > 0) {
-      output += `- **Interests:** ${visitor.primaryInterests.join(', ')}\n`;
-    }
-
-    if (visitor.goalsInferred && visitor.goalsInferred.length > 0) {
-      output += `- **Inferred Goals:** ${visitor.goalsInferred.join(', ')}\n`;
-    }
-
-    if (visitor.recommendedAction) {
-      output += `- **Recommended Action:** ${visitor.recommendedAction}\n`;
-    }
-
-    if (visitor.evidence && visitor.evidence.length > 0) {
-      output += `- **Evidence:** ${visitor.evidence.join('; ')}\n`;
-    }
   }
 
   // Add data retention notice if present
@@ -664,7 +609,7 @@ function formatVisitors(data: any): string {
 function formatVisitorDetail(data: any): string {
   const { visitor, recentSessions, _dataRetention } = data;
 
-  let output = `## Visitor Profile: ${visitor.profileTitle || visitor.visitorId}\n`;
+  let output = `## Visitor: ${visitor.visitorId}\n`;
 
   output += `
 **Visitor ID:** ${visitor.visitorId}
@@ -690,61 +635,15 @@ function formatVisitorDetail(data: any): string {
     output += `**Referrer:** ${visitor.firstReferer}\n`;
   }
 
-  if (visitor.segmentName) {
-    output += `**Segment:** ${visitor.segmentName}\n`;
-  }
-
-  if (visitor.overallSentiment) {
-    output += `**Overall Sentiment:** ${visitor.overallSentiment}\n`;
-  }
-
-  if (visitor.engagementTrend) {
-    output += `**Engagement Trend:** ${visitor.engagementTrend}\n`;
-  }
-
-  if (visitor.profileSummary) {
-    output += `\n### Profile Summary\n${visitor.profileSummary}\n`;
-  }
-
-  if (visitor.primaryInterests && visitor.primaryInterests.length > 0) {
-    output += `\n### Primary Interests\n`;
-    for (const interest of visitor.primaryInterests) {
-      output += `- ${interest}\n`;
-    }
-  }
-
-  if (visitor.goalsInferred && visitor.goalsInferred.length > 0) {
-    output += `\n### Inferred Goals\n`;
-    for (const goal of visitor.goalsInferred) {
-      output += `- ${goal}\n`;
-    }
-  }
-
-  if (visitor.recommendedAction) {
-    output += `\n### Recommended Action\n${visitor.recommendedAction}\n`;
-  }
-
-  if (visitor.evidence && visitor.evidence.length > 0) {
-    output += `\n### Supporting Evidence\n`;
-    for (const e of visitor.evidence.slice(0, 5)) {
-      output += `- ${e}\n`;
-    }
-  }
-
   if (recentSessions && recentSessions.length > 0) {
     output += `\n### Recent Sessions (${recentSessions.length})\n`;
     for (const session of recentSessions) {
       const date = new Date(session.startTime).toLocaleDateString();
-      const sentiment = session.sentiment ? ` [${session.sentiment}]` : '';
-      output += `\n**Session ${session.id}** - ${date}${sentiment}\n`;
-      if (session.title) {
-        output += `Title: ${session.title}\n`;
-      }
-      if (session.description) {
-        output += `${session.description}\n`;
-      }
+      output += `\n**Session ${session.id}** - ${date}\n`;
       output += `Duration: ${session.duration || 0}s | Events: ${session.eventsCount || 0}`;
       if (session.deviceType) output += ` | Device: ${session.deviceType}`;
+      if (session.entryPage) output += ` | Entry: ${session.entryPage}`;
+      if (session.exitPage) output += ` | Exit: ${session.exitPage}`;
       output += '\n';
     }
   }
@@ -775,10 +674,9 @@ function formatSessions(data: any): string {
   for (const session of sessions) {
     const date = new Date(session.startTime).toLocaleDateString();
     const time = new Date(session.startTime).toLocaleTimeString();
-    const sentiment = session.sentiment ? ` [${session.sentiment}]` : '';
 
     output += `
-### Session ${session.id} - ${date} ${time}${sentiment}
+### Session ${session.id} - ${date} ${time}
 - **Visitor:** ${session.visitorId}
 - **Duration:** ${session.duration || 0}s
 - **Events:** ${session.eventsCount || 0}
@@ -800,14 +698,6 @@ function formatSessions(data: any): string {
       }
       output += '\n';
     }
-
-    if (session.title) {
-      output += `- **Title:** ${session.title}\n`;
-    }
-
-    if (session.description) {
-      output += `- **Description:** ${session.description}\n`;
-    }
   }
 
   // Add data retention notice if present
@@ -824,9 +714,8 @@ function formatSessionDetail(data: any): string {
 
   const date = new Date(session.startTime).toLocaleDateString();
   const time = new Date(session.startTime).toLocaleTimeString();
-  const sentiment = session.sentiment ? ` [${session.sentiment}]` : '';
 
-  let output = `## Session ${session.id}${sentiment}\n`;
+  let output = `## Session ${session.id}\n`;
   output += `**Date:** ${date} ${time}\n`;
   output += `**Duration:** ${session.duration || 0}s\n`;
   output += `**Events:** ${session.eventsCount || 0}\n`;
@@ -837,10 +726,6 @@ function formatSessionDetail(data: any): string {
   if (session.region || session.city) {
     const locationParts = [session.city, session.region, session.country].filter(Boolean);
     output += `**Location:** ${locationParts.join(', ')}\n`;
-  }
-
-  if (session.title) {
-    output += `**Title:** ${session.title}\n`;
   }
 
   if (visitor) {
@@ -856,25 +741,6 @@ function formatSessionDetail(data: any): string {
       const locParts = [visitor.city, visitor.region].filter(Boolean);
       output += `**Location:** ${locParts.join(', ')}\n`;
     }
-    if (visitor.profileTitle) {
-      output += `**Profile:** ${visitor.profileTitle}\n`;
-    }
-    if (visitor.profileSummary) {
-      output += `**Summary:** ${visitor.profileSummary}\n`;
-    }
-    if (visitor.overallSentiment) {
-      output += `**Overall Sentiment:** ${visitor.overallSentiment}\n`;
-    }
-    if (visitor.engagementTrend) {
-      output += `**Engagement Trend:** ${visitor.engagementTrend}\n`;
-    }
-    if (visitor.segmentName) {
-      output += `**Segment:** ${visitor.segmentName}\n`;
-    }
-  }
-
-  if (session.description) {
-    output += `\n### Session Description\n${session.description}\n`;
   }
 
   if (session.events && Array.isArray(session.events) && session.events.length > 0) {
@@ -975,23 +841,17 @@ function formatUserFlows(data: any): string {
   }
 
   for (const flow of flows) {
-    const sentimentTotal = (flow.positiveSessions || 0) + (flow.negativeSessions || 0) + (flow.neutralSessions || 0);
-    const positiveRate = sentimentTotal > 0
-      ? Math.round((flow.positiveSessions / sentimentTotal) * 100)
-      : 0;
+    const canonicalPath = flow.canonicalPath || [];
+    const flowLabel = canonicalPath.length > 0
+      ? `${canonicalPath[0]} \u2192 ${canonicalPath[canonicalPath.length - 1]} flow`
+      : 'Unknown flow';
 
-    output += `\n### ${flow.name}`;
+    output += `\n### ${flowLabel}`;
     if (flow.category) output += ` [${flow.category}]`;
     output += `\n`;
-    output += `**Path:** ${(flow.canonicalPath || []).join(' \u2192 ')}\n`;
+    output += `**Path:** ${canonicalPath.join(' \u2192 ')}\n`;
     output += `- **Sessions:** ${flow.sessionCount} (${flow.visitorCount} unique visitors)\n`;
     output += `- **Avg Duration:** ${flow.avgDuration || 0}s | **Avg Pages:** ${flow.avgPageCount || 0}\n`;
-    output += `- **Sentiment:** ${positiveRate}% positive`;
-    if (flow.negativeSessions > 0) {
-      output += ` | ${flow.negativeSessions} negative sessions`;
-    }
-    output += `\n`;
-    output += `${flow.description}\n`;
 
     if (flow.dropOffSteps && flow.dropOffSteps.length > 0) {
       output += `**Drop-off funnel:**\n`;
@@ -1017,7 +877,7 @@ function formatUserFlows(data: any): string {
 // Initialize MCP server
 const server = new Server({
   name: "lcontext-mcp",
-  version: "1.4.0"
+  version: "2026.2.26"
 }, {
   capabilities: {
     tools: {},
@@ -1038,13 +898,17 @@ There are no pre-computed summaries or AI-generated insights — you analyze the
 | list_pages | Discover tracked pages | Page paths, titles, first/last seen dates, view count, bounce/entry/exit counts |
 | get_page_context | Per-page stats + interactive elements | View count, unique visitors, bounce/entry/exit counts, avg duration, scroll depth, Web Vitals (LCP, FCP, FID, CLS), element interactions |
 | get_element_context | Element interaction data | Interaction count, unique visitors, per-period breakdown |
-| get_visitors | Visitor list with profiles | Session count, first/last visit, country, referrer, device type, browser, OS, city, region |
+| get_visitors | Visitor list | Session count, first/last visit, country, referrer, device type, browser, OS, city, region |
 | get_visitor_detail | Visitor's full session history | All sessions with timestamps and event counts, device info (type, browser, OS), location (city, region) |
-| get_sessions | Session list | Duration, event count, start time, visitor ID, device type |
+| get_sessions | Session list | Duration, event count, start time, visitor ID, device type, entry/exit pages |
 | get_session_detail | Full event timeline | Every event: page_view, click, form_submit, scroll_depth, web_vital — with timestamps, element details, device type, location (city, region, country), visitor browser/OS |
-| get_user_flows | Auto-detected user journeys | Named flow patterns with page sequences, session/visitor counts, sentiment distribution, drop-off funnels |
+| get_user_flows | Auto-detected user journeys | Flow patterns with page sequences, session/visitor counts, drop-off funnels |
+| get_analysis | Pre-computed analysis | Daily/weekly report with problem areas, funnel health, session findings, and prioritized recommendations with specific IDs |
 
 ## Analysis Workflow
+
+### Quick Start
+Call get_analysis first — it provides a pre-computed triage with specific page paths, element IDs, and session IDs you can immediately investigate with the other tools. If no analysis is available, proceed with the manual workflow below.
 
 Work top-down — start with aggregate metrics, then narrow based on what you find.
 
@@ -1262,7 +1126,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_app_context",
-        description: "Get application-wide analytics context including total sessions, visitors, page views, engagement metrics, and AI-generated insights. Use this to understand overall app performance and trends.",
+        description: "Get application-wide analytics context including total sessions, visitors, page views, engagement metrics, and performance data. Use this to understand overall app performance and trends.",
         inputSchema: {
           type: "object",
           properties: {
@@ -1280,7 +1144,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_visitors",
-        description: "Get a list of visitors with their AI-generated profiles, interests, engagement trends, and segment assignments. Use this to understand who is using your application.",
+        description: "Get a list of visitors with their session counts, device info, location, and visit history. Use this to understand who is using your application.",
         inputSchema: {
           type: "object",
           properties: {
@@ -1298,7 +1162,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             search: {
               type: "string",
-              description: "Search in visitor ID, title, summary, interests, goals, action, evidence"
+              description: "Search in visitor ID"
             },
             firstVisitAfter: {
               type: "string",
@@ -1315,16 +1179,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             lastVisitBefore: {
               type: "string",
               description: "Filter visitors who last visited before this date (ISO format)"
-            },
-            engagementTrend: {
-              type: "string",
-              enum: ["increasing", "stable", "decreasing"],
-              description: "Filter by engagement trend"
-            },
-            overallSentiment: {
-              type: "string",
-              enum: ["positive", "negative", "neutral", "mixed"],
-              description: "Filter by overall sentiment"
             }
           }
         }
@@ -1345,7 +1199,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_sessions",
-        description: "Get a list of user sessions with AI-generated summaries, titles, and sentiment analysis. Use this to understand user activity patterns.",
+        description: "Get a list of user sessions with duration, events count, pages visited, and device info. Bot, preview, and automated sessions are filtered out by default. Use includeAll=true to see all session types.",
         inputSchema: {
           type: "object",
           properties: {
@@ -1361,11 +1215,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Filter sessions by visitor ID"
             },
-            sentiment: {
-              type: "string",
-              enum: ["positive", "negative", "neutral"],
-              description: "Filter by session sentiment"
-            },
             startDate: {
               type: "string",
               description: "Start date for filtering (ISO format, e.g., '2025-01-01')"
@@ -1373,10 +1222,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             endDate: {
               type: "string",
               description: "End date for filtering (ISO format, e.g., '2025-01-15')"
-            },
-            search: {
-              type: "string",
-              description: "Search in session title and description"
             },
             minDuration: {
               type: "number",
@@ -1397,6 +1242,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             pagePath: {
               type: "string",
               description: "Filter sessions that visited a specific page path"
+            },
+            includeAll: {
+              type: "boolean",
+              description: "Include all session types (bot, preview, automated). By default only real_user sessions are returned."
             }
           }
         }
@@ -1417,7 +1266,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_user_flows",
-        description: "Get automatically detected user journey patterns showing how users navigate through the application. Each flow represents a common page sequence with engagement metrics, drop-off points, and sentiment data. Use this to understand conversion funnels, identify friction points, and discover popular navigation paths.",
+        description: "Get automatically detected user journey patterns showing how users navigate through the application. Each flow represents a common page sequence with engagement metrics and drop-off points. Use this to understand conversion funnels, identify friction points, and discover popular navigation paths.",
         inputSchema: {
           type: "object",
           properties: {
@@ -1433,6 +1282,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             minSessions: {
               type: "number",
               description: "Minimum session count for a flow to be included"
+            },
+            periodType: {
+              type: "string",
+              enum: ["day", "week"],
+              description: "Period type: 'day' for daily flows, 'week' for weekly aggregated flows"
+            }
+          }
+        }
+      },
+      {
+        name: "get_analysis",
+        description: "Get a pre-computed daily or weekly analysis report. Contains problem areas, funnel health, session findings, and prioritized recommendations — all referencing specific page paths, element IDs, and session IDs you can investigate with other tools. Start here for a quick triage before diving deeper.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            periodType: {
+              type: "string",
+              enum: ["day", "week"],
+              description: "Period type: 'day' for daily report (default), 'week' for weekly report"
+            },
+            date: {
+              type: "string",
+              description: "ISO date string for the period start (e.g., '2026-02-23'). Defaults to most recent completed analysis."
             }
           }
         }
@@ -1624,8 +1496,6 @@ ${element.destinationUrl ? `- **Links to:** ${element.destinationUrl}` : ''}
       if (args.firstVisitBefore) params.append('firstVisitBefore', args.firstVisitBefore);
       if (args.lastVisitAfter) params.append('lastVisitAfter', args.lastVisitAfter);
       if (args.lastVisitBefore) params.append('lastVisitBefore', args.lastVisitBefore);
-      if (args.engagementTrend) params.append('engagementTrend', args.engagementTrend);
-      if (args.overallSentiment) params.append('overallSentiment', args.overallSentiment);
 
       const queryString = params.toString();
       const endpoint = `/api/mcp/visitors${queryString ? `?${queryString}` : ''}`;
@@ -1666,15 +1536,14 @@ ${element.destinationUrl ? `- **Links to:** ${element.destinationUrl}` : ''}
       if (args.limit) params.append('limit', args.limit.toString());
       if (args.offset) params.append('offset', args.offset.toString());
       if (args.visitorId) params.append('visitorId', args.visitorId);
-      if (args.sentiment) params.append('sentiment', args.sentiment);
       if (args.startDate) params.append('startDate', args.startDate);
       if (args.endDate) params.append('endDate', args.endDate);
-      if (args.search) params.append('search', args.search);
       if (args.minDuration !== undefined) params.append('minDuration', args.minDuration.toString());
       if (args.maxDuration !== undefined) params.append('maxDuration', args.maxDuration.toString());
       if (args.minEventsCount !== undefined) params.append('minEventsCount', args.minEventsCount.toString());
       if (args.maxEventsCount !== undefined) params.append('maxEventsCount', args.maxEventsCount.toString());
       if (args.pagePath) params.append('pagePath', args.pagePath);
+      if (args.includeAll) params.append('includeAll', 'true');
 
       const queryString = params.toString();
       const endpoint = `/api/mcp/sessions${queryString ? `?${queryString}` : ''}`;
@@ -1715,6 +1584,7 @@ ${element.destinationUrl ? `- **Links to:** ${element.destinationUrl}` : ''}
       if (args.limit) params.append('limit', args.limit.toString());
       if (args.category) params.append('category', args.category);
       if (args.minSessions !== undefined) params.append('minSessions', args.minSessions.toString());
+      if (args.periodType) params.append('periodType', args.periodType);
 
       const queryString = params.toString();
       const endpoint = `/api/mcp/flows${queryString ? `?${queryString}` : ''}`;
@@ -1728,6 +1598,49 @@ ${element.destinationUrl ? `- **Links to:** ${element.destinationUrl}` : ''}
           text: contextOutput
         }]
       };
+    }
+
+    // GET_ANALYSIS tool
+    if (request.params.name === "get_analysis") {
+      const args = getAnalysisSchema.parse(request.params.arguments || {});
+
+      const params = new URLSearchParams();
+      if (args.periodType) params.append('periodType', args.periodType);
+      if (args.date) params.append('date', args.date);
+
+      const queryString = params.toString();
+      const endpoint = `/api/mcp/analysis${queryString ? `?${queryString}` : ''}`;
+
+      try {
+        const data = await apiRequest(endpoint);
+
+        let output = data.content || '';
+
+        // Add metadata footer
+        output += `\n\n---\n`;
+        output += `*Analysis generated ${new Date(data.createdAt).toLocaleString()}`;
+        if (data.model) output += ` by ${data.model}`;
+        output += ` | Period: ${new Date(data.periodStart).toLocaleDateString()} to ${new Date(data.periodEnd).toLocaleDateString()}`;
+        output += `*\n`;
+
+        return {
+          content: [{
+            type: "text",
+            text: output.trim()
+          }]
+        };
+      } catch (error: any) {
+        // Graceful 404 handling
+        if (error.message?.includes('404')) {
+          return {
+            content: [{
+              type: "text",
+              text: `No ${args.periodType} analysis available${args.date ? ` for ${args.date}` : ''}. Daily analyses are generated at 6am UTC, weekly on Monday 8am UTC. Use get_app_context, list_pages, get_page_context, and other tools to perform manual analysis.`
+            }]
+          };
+        }
+        throw error;
+      }
     }
 
     return {

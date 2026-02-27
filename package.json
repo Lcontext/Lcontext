@@ -1,6 +1,6 @@
 {
   "name": "lcontext-mcp",
-  "version": "1.4.0",
+  "version": "2026.2.26",
   "description": "MCP server for Lcontext page analytics - provides page and element context for Claude",
   "type": "module",
   "main": "dist/index.js",
@@ -9,6 +9,8 @@
   },
   "files": [
     "dist/",
+    "SKILL.md",
+    "postinstall.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -22,6 +24,7 @@
   "homepage": "https://lcontext.com",
   "author": "lcontext",
   "scripts": {
+    "postinstall": "node postinstall.mjs",
     "prepublishOnly": "npm run build",
     "build": "tsc",
     "build:binary": "bun build src/index.ts --compile --outfile binaries/lcontext",

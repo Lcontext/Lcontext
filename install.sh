@@ -211,6 +211,49 @@ echo ""
 echo -e "${GREEN}✓ Lcontext MCP server installed successfully!${NC}"
 echo ""
 
+# Install Claude Code skill for automatic analytics guidance
+SKILL_DIR="${HOME}/.claude/skills/lcontext"
+SKILL_URL="${BASE_URL}/SKILL.md"
+
+echo "Installing Claude Code skill..."
+mkdir -p "${SKILL_DIR}"
+
+SKILL_INSTALLED=false
+if command -v curl &> /dev/null; then
+    if curl -fsSL "${SKILL_URL}" -o "${SKILL_DIR}/SKILL.md" 2>/dev/null; then
+        SKILL_INSTALLED=true
+    fi
+elif command -v wget &> /dev/null; then
+    if wget -q "${SKILL_URL}" -O "${SKILL_DIR}/SKILL.md" 2>/dev/null; then
+        SKILL_INSTALLED=true
+    fi
+fi
+
+if [ "$SKILL_INSTALLED" = true ] && [ -s "${SKILL_DIR}/SKILL.md" ]; then
+    echo -e "${GREEN}✓ Claude Code skill installed (${SKILL_DIR}/SKILL.md)${NC}"
+    echo "  Claude will automatically use the analytics guide when relevant."
+    echo "  You can also invoke it directly with: /lcontext"
+else
+    echo -e "${YELLOW}Skill download failed, writing bundled version...${NC}"
+    cat > "${SKILL_DIR}/SKILL.md" << 'SKILLEOF'
+---
+name: lcontext
+description: Analyze user behavior using Lcontext MCP tools. Use when investigating UX issues, conversion drop-offs, page performance, funnel analysis, session recordings, visitor patterns, Web Vitals, or when the user asks about analytics, user behavior, sessions, visitors, or what's happening in their app.
+---
+
+You have access to Lcontext MCP tools that provide raw user behavior data for the application you're working on.
+
+Work **top-down**: start with `get_app_context` for aggregate metrics, use `list_pages` to map the app, then `get_page_context` to deep-dive into problem pages. Use `get_sessions` and `get_session_detail` to investigate individual user journeys. Use `get_user_flows` to see common navigation patterns.
+
+**Key signals**: bounce rate >60% is concerning, LCP >2.5s or CLS >0.1 = performance problem, elements with 0 interactions on high-traffic pages = broken or invisible UI, rapid repeated clicks = rage clicking.
+
+**Connect findings to code**: high exit rate → check route handler; 0 element interactions → check CSS visibility and click handlers; form with low submits → check validation logic; slow LCP → check for large images and blocking JS.
+SKILLEOF
+    echo -e "${GREEN}✓ Claude Code skill installed (bundled version)${NC}"
+fi
+
+echo ""
+
 # Determine config path for Claude Desktop (fallback)
 if [[ "$PLATFORM" == "macos-"* ]]; then
     CONFIG_DIR="$HOME/Library/Application Support/Claude"

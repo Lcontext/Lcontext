@@ -3,66 +3,27 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://img.shields.io/npm/v/lcontext-mcp.svg)](https://www.npmjs.com/package/lcontext-mcp)
 
-MCP server for [Lcontext](https://lcontext.com) behavioral analytics. Provides comprehensive behavioral analytics context for AI coding agents, including page metrics, visitor profiles, session data, device/browser breakdowns, Web Vitals, user journey patterns, and AI-generated insights.
+The product analytics agent for your AI coding tools. Lcontext studies how users navigate your product, where they engage, hesitate, and drop off, and delivers behavioral context via MCP.
 
 **Works with:** Claude Code, Claude Desktop, Cursor, Windsurf, Cline, and any MCP-compatible AI coding tool.
 
-## Installation
+## Setup
 
-### Quick Install (Recommended)
+### 1. Sign Up
 
-```bash
-curl -fsSL https://lcontext.com/api/cli/install | bash
-```
-
-This downloads a standalone binary - no Node.js required.
-
-### Manual Download
-
-Download the binary for your platform from the [latest release](https://github.com/Lcontext/Lcontext/releases/latest):
-
-| Platform | Binary |
-|----------|--------|
-| macOS (Apple Silicon) | `lcontext-macos-arm64` |
-| macOS (Intel) | `lcontext-macos-x64` |
-| Linux (x64) | `lcontext-linux-x64` |
-| Linux (ARM64) | `lcontext-linux-arm64` |
-| Windows (x64) | `lcontext-windows-x64.exe` |
-
-### Via npm
-
-If you have Node.js installed:
-
-```bash
-npm install -g lcontext-mcp
-```
-
-### From Source
-
-```bash
-git clone https://github.com/lcontext/lcontext.git
-cd lcontext
-npm install
-npm run build
-```
-
-## Configuration
-
-### 1. Get Your API Key
-
-Sign up at [lcontext.com](https://lcontext.com) and find your API key in **Settings > API Access**.
+Create a free account at [lcontext.com](https://lcontext.com). This gives you access to the dashboard, your tracking script tag, and your API key.
 
 ### 2. Add the Tracking Script to Your App
 
-Before the MCP server can provide analytics context, you need to install the tracking script on your app to collect behavioral data.
+The tracking script collects behavioral data from your app so Lcontext can study how users navigate your product.
 
-**Quick install:** Add this to your app's HTML:
+Add this to your app's HTML:
 
 ```html
 <script src="https://lcontext.com/it.js?iTag=YOUR_SITE_TAG" defer></script>
 ```
 
-Replace `YOUR_SITE_TAG` with the tag from your app settings in the Lcontext dashboard.
+Replace `YOUR_SITE_TAG` with the tag from your app settings in the dashboard.
 
 <details>
 <summary><b>What the tracker collects</b></summary>
@@ -94,7 +55,9 @@ lcontext('trackEvent', 'purchase', { productId: 'abc', amount: 99.99 });
 
 </details>
 
-### 3. Configure Your AI Coding Tool
+### 3. Connect Your AI Coding Tool
+
+Find your API key in **Settings > API Access** in the dashboard, then set up your tool:
 
 <details open>
 <summary><b>Claude Code / Claude Desktop</b></summary>
@@ -203,6 +166,48 @@ Lcontext works with any tool that supports the Model Context Protocol. The gener
 - **Environment Variable:** `LCONTEXT_API_KEY=your-api-key-here`
 
 Refer to your tool's documentation for MCP server configuration.
+
+</details>
+
+## Alternative Installation Methods
+
+The install script used above (`curl -fsSL https://lcontext.com/api/cli/install | bash`) is the recommended approach. If you need an alternative:
+
+<details>
+<summary><b>Manual Download</b></summary>
+
+Download the binary for your platform from the [latest release](https://github.com/Lcontext/Lcontext/releases/latest):
+
+| Platform | Binary |
+|----------|--------|
+| macOS (Apple Silicon) | `lcontext-macos-arm64` |
+| macOS (Intel) | `lcontext-macos-x64` |
+| Linux (x64) | `lcontext-linux-x64` |
+| Linux (ARM64) | `lcontext-linux-arm64` |
+| Windows (x64) | `lcontext-windows-x64.exe` |
+
+</details>
+
+<details>
+<summary><b>Via npm</b></summary>
+
+If you have Node.js installed:
+
+```bash
+npm install -g lcontext-mcp
+```
+
+</details>
+
+<details>
+<summary><b>From Source</b></summary>
+
+```bash
+git clone https://github.com/lcontext/lcontext.git
+cd lcontext
+npm install
+npm run build
+```
 
 </details>
 
@@ -333,16 +338,30 @@ Show me the details of session 12345
 
 ### `get_user_flows`
 
-Get automatically detected user journey patterns showing how users navigate through the application. Each flow represents a common page sequence with engagement metrics, drop-off points, and sentiment data.
+Get automatically detected user journey patterns showing how users navigate through the application. Each flow represents a common page sequence with engagement metrics and drop-off points.
 
 **Parameters:**
 - `limit` (optional): Maximum flows to return (default: 10, max: 50)
 - `category` (optional): Filter by category: `conversion`, `exploration`, `onboarding`, `support`, `engagement`, `other`
 - `minSessions` (optional): Minimum session count for a flow to be included
+- `periodType` (optional): `day` for daily flows, `week` for weekly aggregated flows
 
 **Example:**
 ```
 Show me the most common user journeys on my app
+```
+
+### `get_analysis`
+
+Get a pre-computed daily or weekly analysis report. Contains problem areas, funnel health, session findings, and prioritized recommendations — all referencing specific page paths, element IDs, and session IDs you can investigate with other tools.
+
+**Parameters:**
+- `periodType` (optional): `day` for daily report (default), `week` for weekly report
+- `date` (optional): ISO date string for the period start (e.g., `2026-02-23`). Defaults to most recent completed analysis.
+
+**Example:**
+```
+Get the latest daily analysis for my app
 ```
 
 ## Prompts
