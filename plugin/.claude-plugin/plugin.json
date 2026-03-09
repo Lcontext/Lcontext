@@ -1,0 +1,23 @@
+{
+  "name": "lcontext",
+  "version": "1.0.0",
+  "description": "Product analytics for AI coding agents. Understand how users navigate your app — where they engage, hesitate, and drop off — then connect behavioral insights directly to code changes.",
+  "author": {
+    "name": "Lcontext",
+    "url": "https://lcontext.com"
+  },
+  "homepage": "https://lcontext.com",
+  "repository": "https://github.com/Lcontext/Lcontext",
+  "license": "MIT",
+  "keywords": [
+    "analytics",
+    "product-analytics",
+    "user-behavior",
+    "session-replay",
+    "web-vitals",
+    "ux",
+    "conversion",
+    "funnel-analysis",
+    "mcp"
+  ]
+}

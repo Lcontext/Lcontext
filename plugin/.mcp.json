@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "lcontext": {
+      "command": "npx",
+      "args": ["-y", "lcontext-mcp@latest"],
+      "env": {
+        "LCONTEXT_API_KEY": ""
+      }
+    }
+  }
+}
