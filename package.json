@@ -1,6 +1,6 @@
 {
   "name": "lcontext-mcp",
-  "version": "2026.2.26",
+  "version": "2026.3.4",
   "description": "MCP server for Lcontext page analytics - provides page and element context for Claude",
   "type": "module",
   "main": "dist/index.js",

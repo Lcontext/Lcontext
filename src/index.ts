@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+// Single source of truth for version — read from package.json at build time
+// (bun --compile embeds imported JSON, so this works in both node and binary)
+import pkg from "../package.json" with { type: "json" };
+const PKG_VERSION: string = pkg.version;
+
 /**
  * Lcontext MCP Server
  *
@@ -22,11 +27,11 @@
 // Handle CLI flags before importing heavy dependencies
 const args = process.argv.slice(2);
 if (args.includes('--version') || args.includes('-v')) {
-  console.log('2026.2.26');
+  console.log(PKG_VERSION);
   process.exit(0);
 }
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`lcontext v2026.2.26
+  console.log(`lcontext v${PKG_VERSION}
 
 MCP server for Lcontext page analytics.
 Provides page and element context for AI coding agents.
@@ -50,7 +55,7 @@ Documentation: https://github.com/Lcontext/Lcontext
 // Self-update command - runs async then exits
 if (args.includes('--update')) {
   import('fs').then(fs => import('os').then(os => {
-    const CURRENT_VERSION = '2026.2.26';
+    const CURRENT_VERSION = PKG_VERSION;
     const GITHUB_REPO = 'Lcontext/Lcontext';
 
     const platform = os.platform();
@@ -132,7 +137,7 @@ import {
 import { z } from "zod";
 
 // Configuration
-const CURRENT_VERSION = "2026.2.26";
+const CURRENT_VERSION = PKG_VERSION;
 const GITHUB_REPO = "Lcontext/Lcontext";
 const API_BASE_URL = process.env.LCONTEXT_API_URL || "https://lcontext.com";
 const API_KEY = process.env.LCONTEXT_API_KEY;
@@ -193,6 +198,22 @@ const getPageContextSchema = z.object({
 const listPagesSchema = z.object({
   limit: z.number().optional().default(50).describe("Maximum number of pages to return (max: 200)"),
   search: z.string().optional().describe("Search filter for page paths")
+});
+
+const getPageStatsSchema = z.object({
+  path: z.string().describe("The page path to get stats for (e.g., '/products', '/checkout')"),
+  startDate: z.string().optional().describe("Start date for stats (ISO format, e.g., '2025-01-01')"),
+  endDate: z.string().optional().describe("End date for stats (ISO format, e.g., '2025-01-13')"),
+  periodType: z.enum(["day", "week"]).optional().default("day").describe("Period type for stats aggregation")
+});
+
+const getPageElementsSchema = z.object({
+  path: z.string().describe("The page path to get elements for (e.g., '/products', '/checkout')"),
+  startDate: z.string().optional().describe("Start date for stats (ISO format)"),
+  endDate: z.string().optional().describe("End date for stats (ISO format)"),
+  periodType: z.enum(["day", "week"]).optional().default("day").describe("Period type for stats aggregation"),
+  limit: z.number().optional().default(10).describe("Maximum number of elements to return, sorted by interaction count (default: 10, max: 50)"),
+  minInteractions: z.number().optional().default(0).describe("Minimum total interactions to include an element (default: 0)")
 });
 
 const getElementContextSchema = z.object({
@@ -418,6 +439,107 @@ ${element.destinationUrl ? `- Links to: ${element.destinationUrl}` : ''}
   // Add data retention notice if present
   if (_dataRetention) {
     output += `\n---\n*Note: Data limited to last ${_dataRetention.days} days (free plan). Upgrade for full history.*\n`;
+  }
+
+  return output.trim();
+}
+
+// Helper function to format page stats (no elements)
+function formatPageStats(data: any): string {
+  const { page, stats, _dataRetention } = data;
+
+  let output = `## ${page.path}`;
+  if (page.title) output += ` — ${page.title}`;
+  output += `\n`;
+
+  if (stats.length === 0) {
+    output += "No statistics available for the selected time range.\n";
+    return output.trim();
+  }
+
+  const totals = stats.reduce((acc: any, stat: any) => ({
+    views: acc.views + (stat.viewCount || 0),
+    uniqueVisitors: acc.uniqueVisitors + (stat.uniqueVisitors || 0),
+    bounces: acc.bounces + (stat.bounceCount || 0),
+    entries: acc.entries + (stat.entryCount || 0),
+    exits: acc.exits + (stat.exitCount || 0)
+  }), { views: 0, uniqueVisitors: 0, bounces: 0, entries: 0, exits: 0 });
+
+  output += `Views: ${totals.views} | Unique visitors: ${totals.uniqueVisitors} | Entries: ${totals.entries} | Exits: ${totals.exits}\n`;
+  output += `Bounce rate: ${totals.views > 0 ? ((totals.bounces / totals.views) * 100).toFixed(1) : 0}% | Exit rate: ${totals.views > 0 ? ((totals.exits / totals.views) * 100).toFixed(1) : 0}%\n`;
+  output += `Avg duration: ${stats[0]?.avgDuration || 0}s | Scroll depth: ${stats[0]?.avgScrollDepth || 0}%\n`;
+
+  const latestStat = stats[0];
+  if (latestStat && (latestStat.avgLcp || latestStat.avgFcp || latestStat.avgCls != null)) {
+    const vitals: string[] = [];
+    if (latestStat.avgLcp) vitals.push(`LCP ${latestStat.avgLcp}ms`);
+    if (latestStat.avgFcp) vitals.push(`FCP ${latestStat.avgFcp}ms`);
+    if (latestStat.avgCls != null) vitals.push(`CLS ${latestStat.avgCls.toFixed(3)}`);
+    output += `Web Vitals: ${vitals.join(' | ')}\n`;
+  }
+
+  // Page flow
+  const allPrevPages = new Map<string, number>();
+  const allNextPages = new Map<string, number>();
+  for (const stat of stats) {
+    if (stat.topPreviousPages && Array.isArray(stat.topPreviousPages)) {
+      for (const p of stat.topPreviousPages) {
+        allPrevPages.set(p.path, (allPrevPages.get(p.path) || 0) + p.count);
+      }
+    }
+    if (stat.topNextPages && Array.isArray(stat.topNextPages)) {
+      for (const p of stat.topNextPages) {
+        allNextPages.set(p.path, (allNextPages.get(p.path) || 0) + p.count);
+      }
+    }
+  }
+
+  if (allPrevPages.size > 0) {
+    const sorted = Array.from(allPrevPages.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    output += `From: ${sorted.map(([path, count]) => `${path} (${count})`).join(', ')}\n`;
+  }
+  if (allNextPages.size > 0) {
+    const sorted = Array.from(allNextPages.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    output += `To: ${sorted.map(([path, count]) => `${path} (${count})`).join(', ')}\n`;
+  }
+
+  if (_dataRetention) {
+    output += `\n*Data limited to last ${_dataRetention.days} days (free plan).*\n`;
+  }
+
+  return output.trim();
+}
+
+// Helper function to format page elements
+function formatPageElements(data: any): string {
+  const { page, elements, _dataRetention } = data;
+
+  let output = `## Elements: ${page.path}\n`;
+
+  if (elements.length === 0) {
+    output += "No interactive elements found matching the criteria.\n";
+    return output.trim();
+  }
+
+  output += `Showing ${elements.length} element(s) sorted by interaction count:\n\n`;
+
+  for (const element of elements) {
+    const label = element.label || element.ariaLabel || element.elementId || element.tagName || 'Unknown';
+    const category = element.category?.toUpperCase() || 'OTHER';
+    const totalUniqueVisitors = element.stats.reduce((sum: number, s: any) => sum + (s.uniqueVisitors || 0), 0);
+
+    output += `**${category}: ${label}** (ID: ${element.id})`;
+    if (element.elementId) output += ` html-id="${element.elementId}"`;
+    output += `\n`;
+    output += `- Interactions: ${element.totalInteractions} | Visitors: ${totalUniqueVisitors}\n`;
+    output += `- Tag: \`<${element.tagName || 'unknown'}>\``;
+    if (element.ariaLabel) output += ` aria-label="${element.ariaLabel}"`;
+    output += `\n`;
+    if (element.destinationUrl) output += `- Links to: ${element.destinationUrl}\n`;
+  }
+
+  if (_dataRetention) {
+    output += `\n*Data limited to last ${_dataRetention.days} days (free plan).*\n`;
   }
 
   return output.trim();
@@ -877,7 +999,7 @@ function formatUserFlows(data: any): string {
 // Initialize MCP server
 const server = new Server({
   name: "lcontext-mcp",
-  version: "2026.2.26"
+  version: PKG_VERSION
 }, {
   capabilities: {
     tools: {},
@@ -1081,6 +1203,68 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               enum: ["day", "week"],
               description: "Period type for stats aggregation (default: 'day')"
+            }
+          },
+          required: ["path"]
+        }
+      },
+      {
+        name: "get_page_stats",
+        description: "Get page analytics stats without element data. Returns views, visitors, bounce/exit rates, web vitals, and navigation flow. Use this for lightweight bulk page analysis.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "The page path to get stats for (e.g., '/products', '/checkout')"
+            },
+            startDate: {
+              type: "string",
+              description: "Start date for stats (ISO format, e.g., '2025-01-01')"
+            },
+            endDate: {
+              type: "string",
+              description: "End date for stats (ISO format, e.g., '2025-01-13')"
+            },
+            periodType: {
+              type: "string",
+              enum: ["day", "week"],
+              description: "Period type for stats aggregation (default: 'day')"
+            }
+          },
+          required: ["path"]
+        }
+      },
+      {
+        name: "get_page_elements",
+        description: "Get interactive elements for a page, sorted by interaction count. Returns top elements with engagement data. Use this to investigate specific pages that need element-level detail.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "The page path to get elements for (e.g., '/products', '/checkout')"
+            },
+            startDate: {
+              type: "string",
+              description: "Start date for stats (ISO format, e.g., '2025-01-01')"
+            },
+            endDate: {
+              type: "string",
+              description: "End date for stats (ISO format, e.g., '2025-01-13')"
+            },
+            periodType: {
+              type: "string",
+              enum: ["day", "week"],
+              description: "Period type for stats aggregation (default: 'day')"
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of elements to return, sorted by interaction count (default: 10, max: 50)"
+            },
+            minInteractions: {
+              type: "number",
+              description: "Minimum total interactions to include an element (default: 0)"
             }
           },
           required: ["path"]
@@ -1334,6 +1518,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const data = await apiRequest(endpoint);
       const contextOutput = formatPageContext(data);
+
+      return {
+        content: [{
+          type: "text",
+          text: contextOutput
+        }]
+      };
+    }
+
+    // GET_PAGE_STATS tool (lightweight, no elements)
+    if (request.params.name === "get_page_stats") {
+      const args = getPageStatsSchema.parse(request.params.arguments);
+
+      const params = new URLSearchParams();
+      if (args.startDate) params.append('startDate', args.startDate);
+      if (args.endDate) params.append('endDate', args.endDate);
+      if (args.periodType) params.append('periodType', args.periodType);
+
+      const encodedPath = encodeURIComponent(args.path);
+      const queryString = params.toString();
+      const endpoint = `/api/mcp/page-stats/${encodedPath}${queryString ? `?${queryString}` : ''}`;
+
+      const data = await apiRequest(endpoint);
+      const contextOutput = formatPageStats(data);
+
+      return {
+        content: [{
+          type: "text",
+          text: contextOutput
+        }]
+      };
+    }
+
+    // GET_PAGE_ELEMENTS tool (filtered elements only)
+    if (request.params.name === "get_page_elements") {
+      const args = getPageElementsSchema.parse(request.params.arguments);
+
+      const params = new URLSearchParams();
+      if (args.startDate) params.append('startDate', args.startDate);
+      if (args.endDate) params.append('endDate', args.endDate);
+      if (args.periodType) params.append('periodType', args.periodType);
+      if (args.limit) params.append('limit', args.limit.toString());
+      if (args.minInteractions) params.append('minInteractions', args.minInteractions.toString());
+
+      const encodedPath = encodeURIComponent(args.path);
+      const queryString = params.toString();
+      const endpoint = `/api/mcp/page-elements/${encodedPath}${queryString ? `?${queryString}` : ''}`;
+
+      const data = await apiRequest(endpoint);
+      const contextOutput = formatPageElements(data);
 
       return {
         content: [{
