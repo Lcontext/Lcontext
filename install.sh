@@ -230,9 +230,7 @@ elif command -v wget &> /dev/null; then
 fi
 
 if [ "$SKILL_INSTALLED" = true ] && [ -s "${SKILL_DIR}/SKILL.md" ]; then
-    echo -e "${GREEN}✓ Claude Code skill installed (${SKILL_DIR}/SKILL.md)${NC}"
-    echo "  Claude will automatically use the analytics guide when relevant."
-    echo "  You can also invoke it directly with: /lcontext"
+    echo -e "${GREEN}✓ Claude Code skill installed${NC}"
 else
     echo -e "${YELLOW}Skill download failed, writing bundled version...${NC}"
     cat > "${SKILL_DIR}/SKILL.md" << 'SKILLEOF'
@@ -266,46 +264,132 @@ else
     CONFIG_PATH="$CONFIG_DIR/claude_desktop_config.json"
 fi
 
+# ── Authentication via device flow ──────────────────────────────────────────
+
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}Configure Claude${NC}"
+echo -e "${GREEN}Sign in to Lcontext${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "To use Lcontext with Claude, you need an API key."
-echo -e "Get your API key from: ${BLUE}https://lcontext.com/settings${NC}"
-echo ""
 
-# Prompt for API key (read from /dev/tty to work when script is piped)
-read -p "Enter your API key (or press Enter to skip): " API_KEY < /dev/tty
+LCONTEXT_URL="https://lcontext.com"
+API_KEY=""
+TAG=""
 
-if [ -n "$API_KEY" ]; then
+# Allow skipping auth if API key is already set via environment
+if [ -n "${LCONTEXT_API_KEY:-}" ]; then
+    echo -e "Using API key from environment variable."
+    API_KEY="$LCONTEXT_API_KEY"
+else
+    echo "Starting authentication..."
     echo ""
-    echo "Configuring Claude..."
 
-    CONFIGURED=false
+    # Start device auth flow
+    AUTH_RESPONSE=$(curl -s -X POST "${LCONTEXT_URL}/api/cli/auth/start" \
+        -H "Content-Type: application/json" -d '{}' 2>/dev/null) || true
 
-    # API URL for the MCP server to connect to
-    API_URL="https://lcontext.com"
-
-    # Try Claude Code CLI first (preferred method)
-    if command -v claude &> /dev/null; then
-        echo "Detected Claude Code CLI, configuring via 'claude mcp add'..."
-        if claude mcp add lcontext -e "LCONTEXT_API_KEY=$API_KEY" -e "LCONTEXT_API_URL=$API_URL" -- lcontext 2>/dev/null; then
-            echo -e "${GREEN}✓ Claude Code configured successfully!${NC}"
-            CONFIGURED=true
-        else
-            echo -e "${YELLOW}Claude Code configuration failed, trying Claude Desktop config...${NC}"
-        fi
+    if [ -z "$AUTH_RESPONSE" ]; then
+        echo -e "${RED}Error: Could not reach ${LCONTEXT_URL}${NC}"
+        echo ""
+        echo "To configure manually with an existing API key:"
+        echo -e "  ${GREEN}claude mcp add lcontext -e LCONTEXT_API_KEY=your-key -- lcontext${NC}"
+        send_telemetry "true"
+        exit 1
     fi
 
-    # Fall back to Claude Desktop config file
-    if [ "$CONFIGURED" = false ]; then
-        echo "Configuring Claude Desktop..."
-        mkdir -p "$CONFIG_DIR"
+    # Extract token and url from JSON response
+    AUTH_TOKEN=$(echo "$AUTH_RESPONSE" | grep -o '"token":"[^"]*"' | head -1 | cut -d'"' -f4)
+    AUTH_URL=$(echo "$AUTH_RESPONSE" | grep -o '"url":"[^"]*"' | head -1 | cut -d'"' -f4)
 
-        if [ -f "$CONFIG_PATH" ] && [ -s "$CONFIG_PATH" ]; then
-            # Config exists - merge with Python if available
-            if command -v python3 &> /dev/null; then
-                python3 << PYEOF
+    if [ -z "$AUTH_TOKEN" ] || [ -z "$AUTH_URL" ]; then
+        echo -e "${RED}Error: Unexpected response from auth server${NC}"
+        echo ""
+        echo "To configure manually with an existing API key:"
+        echo -e "  ${GREEN}claude mcp add lcontext -e LCONTEXT_API_KEY=your-key -- lcontext${NC}"
+        send_telemetry "true"
+        exit 1
+    fi
+
+    # Open the browser
+    echo -e "Opening your browser to sign in..."
+    echo -e "If it doesn't open, visit: ${BLUE}${AUTH_URL}${NC}"
+    echo ""
+
+    if command -v open &> /dev/null; then
+        open "$AUTH_URL" 2>/dev/null || true
+    elif command -v xdg-open &> /dev/null; then
+        xdg-open "$AUTH_URL" 2>/dev/null || true
+    elif command -v wslview &> /dev/null; then
+        wslview "$AUTH_URL" 2>/dev/null || true
+    fi
+
+    # Poll for completion (every 3 seconds, up to 10 minutes)
+    echo -n "Waiting for you to sign in"
+    POLL_COUNT=0
+    MAX_POLLS=200  # 200 * 3s = 10 minutes
+
+    while [ $POLL_COUNT -lt $MAX_POLLS ]; do
+        sleep 3
+        echo -n "."
+
+        POLL_RESPONSE=$(curl -s "${LCONTEXT_URL}/api/cli/auth/poll/${AUTH_TOKEN}" 2>/dev/null) || true
+        POLL_STATUS=$(echo "$POLL_RESPONSE" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+        if [ "$POLL_STATUS" = "completed" ]; then
+            echo ""
+            echo ""
+
+            # Extract credentials from completed response
+            API_KEY=$(echo "$POLL_RESPONSE" | grep -o '"apiKey":"[^"]*"' | head -1 | cut -d'"' -f4)
+            TAG=$(echo "$POLL_RESPONSE" | grep -o '"tag":"[^"]*"' | head -1 | cut -d'"' -f4)
+            WEBSITE_NAME=$(echo "$POLL_RESPONSE" | grep -o '"websiteName":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+            echo -e "${GREEN}✓ Signed in successfully!${NC}"
+            if [ -n "$WEBSITE_NAME" ]; then
+                echo -e "  App: ${WEBSITE_NAME}"
+            fi
+            break
+        fi
+
+        POLL_COUNT=$((POLL_COUNT + 1))
+    done
+
+    if [ -z "$API_KEY" ]; then
+        echo ""
+        echo -e "${RED}Error: Authentication timed out${NC}"
+        echo ""
+        echo "To configure manually with an existing API key:"
+        echo -e "  ${GREEN}claude mcp add lcontext -e LCONTEXT_API_KEY=your-key -- lcontext${NC}"
+        send_telemetry "true"
+        exit 1
+    fi
+fi
+
+# ── Configure Claude ────────────────────────────────────────────────────────
+
+echo ""
+echo "Configuring Claude..."
+
+CONFIGURED=false
+API_URL="https://lcontext.com"
+
+# Try Claude Code CLI first (preferred method)
+if command -v claude &> /dev/null; then
+    echo "Detected Claude Code, configuring MCP server..."
+    if claude mcp add lcontext -s user -e "LCONTEXT_API_KEY=$API_KEY" -e "LCONTEXT_API_URL=$API_URL" -- lcontext 2>/dev/null; then
+        echo -e "${GREEN}✓ Claude Code configured!${NC}"
+        CONFIGURED=true
+    else
+        echo -e "${YELLOW}Claude Code configuration failed, trying Claude Desktop config...${NC}"
+    fi
+fi
+
+# Fall back to Claude Desktop config file
+if [ "$CONFIGURED" = false ]; then
+    mkdir -p "$CONFIG_DIR"
+
+    if [ -f "$CONFIG_PATH" ] && [ -s "$CONFIG_PATH" ]; then
+        if command -v python3 &> /dev/null; then
+            python3 << PYEOF
 import json
 
 config_path = "$CONFIG_PATH"
@@ -333,24 +417,8 @@ with open(config_path, 'w') as f:
 
 print("Configuration merged successfully!")
 PYEOF
-            else
-                cp "$CONFIG_PATH" "$CONFIG_PATH.backup"
-                echo -e "${YELLOW}Existing config backed up to ${CONFIG_PATH}.backup${NC}"
-                cat > "$CONFIG_PATH" << JSONEOF
-{
-  "mcpServers": {
-    "lcontext": {
-      "command": "lcontext",
-      "env": {
-        "LCONTEXT_API_KEY": "$API_KEY",
-        "LCONTEXT_API_URL": "$API_URL"
-      }
-    }
-  }
-}
-JSONEOF
-            fi
         else
+            cp "$CONFIG_PATH" "$CONFIG_PATH.backup" 2>/dev/null || true
             cat > "$CONFIG_PATH" << JSONEOF
 {
   "mcpServers": {
@@ -365,44 +433,50 @@ JSONEOF
 }
 JSONEOF
         fi
-        echo -e "${GREEN}✓ Claude Desktop configured successfully!${NC}"
-    fi
-
-    echo ""
-    echo -e "${YELLOW}Restart Claude to start using lcontext.${NC}"
-else
-    echo ""
-    echo -e "${YELLOW}Skipped configuration.${NC}"
-    echo ""
-    echo "To configure manually:"
-    echo ""
-    echo -e "${GREEN}Claude Code (CLI):${NC}"
-    echo "  claude mcp add lcontext -e LCONTEXT_API_KEY=your-api-key -e LCONTEXT_API_URL=https://lcontext.com -- lcontext"
-    echo ""
-    echo -e "${GREEN}Claude Desktop:${NC}"
-    echo "  Edit: ${YELLOW}${CONFIG_PATH}${NC}"
-    echo ""
-    cat << 'CONFIGEOF'
+    else
+        cat > "$CONFIG_PATH" << JSONEOF
 {
   "mcpServers": {
     "lcontext": {
       "command": "lcontext",
       "env": {
-        "LCONTEXT_API_KEY": "your-api-key-here",
-        "LCONTEXT_API_URL": "https://lcontext.com"
+        "LCONTEXT_API_KEY": "$API_KEY",
+        "LCONTEXT_API_URL": "$API_URL"
       }
     }
   }
 }
-CONFIGEOF
+JSONEOF
+    fi
+    echo -e "${GREEN}✓ Claude Desktop configured!${NC}"
 fi
 
 # Send installation telemetry (background, non-blocking)
 send_telemetry "true"
 
+# ── Done ────────────────────────────────────────────────────────────────────
+
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}Setup complete!${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "For documentation and support:"
-echo -e "${BLUE}https://github.com/Lcontext/Lcontext${NC}"
+
+# Show tracking snippet if we have the tag
+if [ -n "$TAG" ]; then
+    echo "Add this tracking script to your app's HTML:"
+    echo ""
+    echo -e "  ${GREEN}<script src=\"https://lcontext.com/it.js?iTag=${TAG}\" defer></script>${NC}"
+    echo ""
+fi
+
+echo -e "${YELLOW}Next steps:${NC}"
+echo "  1. Restart your coding agent for the MCP server to connect"
+if [ -n "$TAG" ]; then
+    echo "  2. Add the tracking script above to your app"
+    echo "  3. Once you have traffic, ask your agent to analyze user behavior"
+else
+    echo "  2. Add the tracking script to your app (find it in your dashboard)"
+    echo "  3. Once you have traffic, ask your agent to analyze user behavior"
+fi
 echo ""

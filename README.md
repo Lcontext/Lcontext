@@ -7,23 +7,34 @@ The product analytics agent for your AI coding tools. Lcontext studies how users
 
 **Works with:** Claude Code, Claude Desktop, Cursor, Windsurf, Cline, and any MCP-compatible AI coding tool.
 
-## Setup
+## Quick Setup
 
-### 1. Sign Up
+The fastest way to get started -- sign up, configure your agent, and get your tracking script in one command:
 
-Create a free account at [lcontext.com](https://lcontext.com). This gives you access to the dashboard, your tracking script tag, and your API key.
+```bash
+npx lcontext-mcp@latest setup
+```
 
-### 2. Add the Tracking Script to Your App
+Or using the standalone installer (no Node required):
 
-The tracking script collects behavioral data from your app so Lcontext can study how users navigate your product.
+```bash
+curl -fsSL https://lcontext.com/api/cli/install | bash
+```
 
-Add this to your app's HTML:
+Both will open your browser to sign up (or log in), configure your coding agent, and print the tracking script to add to your app.
+
+### Manual Setup
+
+If you prefer to set things up manually:
+
+1. Create a free account at [lcontext.com](https://lcontext.com)
+2. Add the tracking script to your app (find your tag in the dashboard):
 
 ```html
 <script src="https://lcontext.com/it.js?iTag=YOUR_SITE_TAG" defer></script>
 ```
 
-Replace `YOUR_SITE_TAG` with the tag from your app settings in the dashboard.
+3. Connect your coding agent (see below)
 
 <details>
 <summary><b>What the tracker collects</b></summary>
@@ -55,17 +66,13 @@ lcontext('trackEvent', 'purchase', { productId: 'abc', amount: 99.99 });
 
 </details>
 
-### 3. Connect Your AI Coding Tool
-
-Find your API key in **Settings > API Access** in the dashboard, then set up your tool:
+### Agent Configuration
 
 <details open>
 <summary><b>Claude Code / Claude Desktop</b></summary>
 
-Run the install script - it will prompt for your API key and configure Claude automatically:
-
 ```bash
-curl -fsSL https://lcontext.com/api/cli/install | bash
+claude mcp add lcontext -s user -e LCONTEXT_API_KEY=your-api-key -- npx -y lcontext-mcp@latest
 ```
 
 Then restart Claude.

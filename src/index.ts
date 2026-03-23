@@ -38,6 +38,7 @@ Provides page and element context for AI coding agents.
 
 Usage:
   lcontext [options]
+  lcontext setup        Sign up and configure your coding agent
 
 Options:
   -v, --version    Show version number
@@ -52,6 +53,193 @@ Documentation: https://github.com/Lcontext/Lcontext
 `);
   process.exit(0);
 }
+// Interactive setup command
+if (args[0] === 'setup') {
+  const LCONTEXT_URL = process.env.LCONTEXT_URL || 'https://lcontext.com';
+
+  const GREEN = '\x1b[0;32m';
+  const BLUE = '\x1b[0;34m';
+  const YELLOW = '\x1b[1;33m';
+  const RED = '\x1b[0;31m';
+  const NC = '\x1b[0m';
+
+  console.log(`${BLUE}`);
+  console.log('  _                 _            _');
+  console.log(' | |               | |          | |');
+  console.log(' | | ___ ___  _ __ | |_ _____  _| |_');
+  console.log(' | |/ __/ _ \\| \'_ \\| __/ _ \\ \\/ / __|');
+  console.log(' | | (_| (_) | | | | ||  __/>  <| |_');
+  console.log(' |_|\\___\\___/|_| |_|\\__\\___/_/\\_\\\\__|');
+  console.log('');
+  console.log(` Setup  v${PKG_VERSION}`);
+  console.log(`${NC}`);
+
+  (async () => {
+    const { execSync } = await import('child_process');
+    const os = await import('os');
+
+    // Step 1: Check if already configured
+    if (process.env.LCONTEXT_API_KEY) {
+      console.log(`${GREEN}✓ API key already configured${NC}`);
+      console.log('');
+      console.log(`${YELLOW}Next steps:${NC}`);
+      console.log('  Restart your coding agent, then ask it to analyze user behavior.');
+      process.exit(0);
+    }
+
+    // Step 2: Device auth flow
+    console.log('Starting authentication...');
+    console.log('');
+
+    let authResponse: any;
+    try {
+      const res = await fetch(`${LCONTEXT_URL}/api/cli/auth/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      authResponse = await res.json();
+    } catch {
+      console.error(`${RED}Error: Could not reach ${LCONTEXT_URL}${NC}`);
+      process.exit(1);
+    }
+
+    const { token, url } = authResponse;
+    if (!token || !url) {
+      console.error(`${RED}Error: Unexpected response from auth server${NC}`);
+      process.exit(1);
+    }
+
+    // Open browser
+    console.log('Opening your browser to sign in...');
+    console.log(`If it doesn't open, visit: ${BLUE}${url}${NC}`);
+    console.log('');
+
+    const platform = os.platform();
+    try {
+      if (platform === 'darwin') execSync(`open "${url}"`, { stdio: 'ignore' });
+      else if (platform === 'win32') execSync(`start "${url}"`, { stdio: 'ignore' });
+      else execSync(`xdg-open "${url}" 2>/dev/null || wslview "${url}" 2>/dev/null`, { stdio: 'ignore' });
+    } catch {}
+
+    // Poll for completion
+    process.stdout.write('Waiting for you to sign in');
+    let apiKey = '';
+    let tag = '';
+    let websiteName = '';
+
+    for (let i = 0; i < 200; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      process.stdout.write('.');
+
+      try {
+        const res = await fetch(`${LCONTEXT_URL}/api/cli/auth/poll/${token}`);
+        const data: any = await res.json();
+
+        if (data.status === 'completed') {
+          apiKey = data.apiKey;
+          tag = data.tag;
+          websiteName = data.websiteName || '';
+          console.log('');
+          console.log('');
+          console.log(`${GREEN}✓ Signed in successfully!${NC}`);
+          if (websiteName) console.log(`  App: ${websiteName}`);
+          break;
+        }
+      } catch {}
+    }
+
+    if (!apiKey) {
+      console.log('');
+      console.error(`${RED}Error: Authentication timed out${NC}`);
+      process.exit(1);
+    }
+
+    // Step 3: Configure the MCP server
+    console.log('');
+    console.log('Configuring your coding agent...');
+
+    let configured = false;
+
+    // Try Claude Code CLI
+    try {
+      execSync(
+        `claude mcp add lcontext -s user -e LCONTEXT_API_KEY=${apiKey} -e LCONTEXT_API_URL=${LCONTEXT_URL} -- npx -y lcontext-mcp@latest`,
+        { stdio: 'ignore' }
+      );
+      console.log(`${GREEN}✓ Claude Code configured!${NC}`);
+      configured = true;
+    } catch {}
+
+    if (!configured) {
+      // Try writing Cursor/Windsurf config
+      const fs = await import('fs');
+      const path = await import('path');
+
+      for (const dir of ['.cursor', '.windsurf']) {
+        const configDir = path.join(process.cwd(), dir);
+        if (fs.existsSync(configDir)) {
+          const configPath = path.join(configDir, 'mcp.json');
+          let config: any = {};
+          try {
+            config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          } catch {}
+          if (!config.mcpServers) config.mcpServers = {};
+          config.mcpServers.lcontext = {
+            command: 'npx',
+            args: ['-y', 'lcontext-mcp@latest'],
+            env: { LCONTEXT_API_KEY: apiKey, LCONTEXT_API_URL: LCONTEXT_URL },
+          };
+          fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+          console.log(`${GREEN}✓ ${dir === '.cursor' ? 'Cursor' : 'Windsurf'} configured!${NC}`);
+          configured = true;
+        }
+      }
+    }
+
+    if (!configured) {
+      console.log(`${YELLOW}Could not auto-detect your agent. Configure manually:${NC}`);
+      console.log('');
+      console.log(`${GREEN}Claude Code:${NC}`);
+      console.log(`  claude mcp add lcontext -s user -e LCONTEXT_API_KEY=${apiKey} -- npx -y lcontext-mcp@latest`);
+      console.log('');
+      console.log(`${GREEN}Cursor / Windsurf:${NC}`);
+      console.log(`  Add to .cursor/mcp.json or .windsurf/mcp.json:`);
+      console.log(`  { "mcpServers": { "lcontext": { "command": "npx", "args": ["-y", "lcontext-mcp@latest"], "env": { "LCONTEXT_API_KEY": "${apiKey}" } } } }`);
+    }
+
+    // Step 4: Show tracking snippet
+    console.log('');
+    console.log(`${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}`);
+    console.log(`${GREEN}Setup complete!${NC}`);
+    console.log(`${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}`);
+    console.log('');
+
+    if (tag) {
+      console.log('Add this tracking script to your app\'s HTML:');
+      console.log('');
+      console.log(`  ${GREEN}<script src="${LCONTEXT_URL}/it.js?iTag=${tag}" defer></script>${NC}`);
+      console.log('');
+    }
+
+    console.log(`${YELLOW}Next steps:${NC}`);
+    console.log('  1. Restart your coding agent for the MCP server to connect');
+    if (tag) {
+      console.log('  2. Add the tracking script above to your app');
+      console.log('  3. Once you have traffic, ask your agent to analyze user behavior');
+    } else {
+      console.log('  2. Add the tracking script to your app (find it in your dashboard)');
+      console.log('  3. Once you have traffic, ask your agent to analyze user behavior');
+    }
+    console.log('');
+
+    process.exit(0);
+  })();
+
+  // Keep process alive while setup runs
+  setInterval(() => {}, 1000);
+}
+
 // Self-update command - runs async then exits
 if (args.includes('--update')) {
   import('fs').then(fs => import('os').then(os => {
