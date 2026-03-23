@@ -1016,23 +1016,23 @@ There are no pre-computed summaries or AI-generated insights — you analyze the
 
 | Tool | Purpose | Key Data |
 |------|---------|----------|
-| get_app_context | App-wide stats and trends | Sessions, visitors, page views, clicks, form submits, bounce rate, top pages/referrers/countries, device breakdown (mobile/tablet/desktop), top browsers, top OS, Web Vitals (LCP, FCP, FID, CLS) |
+| **get_analysis** | **START HERE.** Pre-computed analysis report | Problem areas, funnel health, session findings, prioritized recommendations -- all with specific page paths, element IDs, and session IDs to investigate further |
+| get_app_context | Raw app-wide stats and trends (use after analysis) | Sessions, visitors, page views, clicks, form submits, bounce rate, top pages/referrers/countries, device breakdown (mobile/tablet/desktop), top browsers, top OS, Web Vitals (LCP, FCP, FID, CLS) |
 | list_pages | Discover tracked pages | Page paths, titles, first/last seen dates, view count, bounce/entry/exit counts |
 | get_page_context | Per-page stats + interactive elements | View count, unique visitors, bounce/entry/exit counts, avg duration, scroll depth, Web Vitals (LCP, FCP, FID, CLS), element interactions |
 | get_element_context | Element interaction data | Interaction count, unique visitors, per-period breakdown |
 | get_visitors | Visitor list | Session count, first/last visit, country, referrer, device type, browser, OS, city, region |
 | get_visitor_detail | Visitor's full session history | All sessions with timestamps and event counts, device info (type, browser, OS), location (city, region) |
 | get_sessions | Session list | Duration, event count, start time, visitor ID, device type, entry/exit pages |
-| get_session_detail | Full event timeline | Every event: page_view, click, form_submit, scroll_depth, web_vital — with timestamps, element details, device type, location (city, region, country), visitor browser/OS |
+| get_session_detail | Full event timeline | Every event: page_view, click, form_submit, scroll_depth, web_vital -- with timestamps, element details, device type, location (city, region, country), visitor browser/OS |
 | get_user_flows | Auto-detected user journeys | Flow patterns with page sequences, session/visitor counts, drop-off funnels |
-| get_analysis | Pre-computed analysis | Daily/weekly report with problem areas, funnel health, session findings, and prioritized recommendations with specific IDs |
 
 ## Analysis Workflow
 
-### Quick Start
-Call get_analysis first — it provides a pre-computed triage with specific page paths, element IDs, and session IDs you can immediately investigate with the other tools. If no analysis is available, proceed with the manual workflow below.
+### Quick Start (IMPORTANT)
+ALWAYS call get_analysis first before any other tool. It returns a pre-computed triage report with specific page paths, element IDs, and session IDs you can immediately investigate with the other tools. Only fall back to the manual workflow below if no analysis is available.
 
-Work top-down — start with aggregate metrics, then narrow based on what you find.
+Do NOT start with get_app_context or get_sessions — those are for drilling deeper after you have the analysis.
 
 ### Phase 1: App Overview
 Use get_app_context. From the daily/weekly stats, calculate:
@@ -1182,6 +1182,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
+        name: "get_analysis",
+        description: "ALWAYS call this first. Returns a pre-computed daily or weekly analysis report with problem areas, funnel health, session findings, and prioritized recommendations. All findings reference specific page paths, element IDs, and session IDs you can investigate with the other tools. Do not call get_app_context or get_sessions before calling this.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            periodType: {
+              type: "string",
+              enum: ["day", "week"],
+              description: "Period type: 'day' for daily report (default), 'week' for weekly report"
+            },
+            date: {
+              type: "string",
+              description: "ISO date string for the period start (e.g., '2026-02-23'). Defaults to most recent completed analysis."
+            }
+          }
+        }
+      },
+      {
         name: "get_page_context",
         description: "Get comprehensive analytics context for a page including stats, visitor metrics, and all interactive elements with their engagement data. Use this when analyzing user behavior on a specific page.",
         inputSchema: {
@@ -1310,7 +1328,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_app_context",
-        description: "Get application-wide analytics context including total sessions, visitors, page views, engagement metrics, and performance data. Use this to understand overall app performance and trends.",
+        description: "Get raw application-wide analytics metrics including total sessions, visitors, page views, engagement metrics, and performance data. Call get_analysis first for a summarized triage -- use this tool only when you need raw metric trends or deeper drill-down.",
         inputSchema: {
           type: "object",
           properties: {
@@ -1471,24 +1489,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               enum: ["day", "week"],
               description: "Period type: 'day' for daily flows, 'week' for weekly aggregated flows"
-            }
-          }
-        }
-      },
-      {
-        name: "get_analysis",
-        description: "Get a pre-computed daily or weekly analysis report. Contains problem areas, funnel health, session findings, and prioritized recommendations — all referencing specific page paths, element IDs, and session IDs you can investigate with other tools. Start here for a quick triage before diving deeper.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            periodType: {
-              type: "string",
-              enum: ["day", "week"],
-              description: "Period type: 'day' for daily report (default), 'week' for weekly report"
-            },
-            date: {
-              type: "string",
-              description: "ISO date string for the period start (e.g., '2026-02-23'). Defaults to most recent completed analysis."
             }
           }
         }

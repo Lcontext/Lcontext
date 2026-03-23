@@ -11,8 +11,8 @@ There are no pre-computed summaries or AI-generated insights — you analyze the
 
 | Tool | Purpose | Key Data |
 |------|---------|----------|
-| `get_analysis` | Pre-computed analysis report | Problem areas, funnel health, session findings, prioritized recommendations with specific page paths, element IDs, and session IDs |
-| `get_app_context` | App-wide behavioral overview | Sessions, visitors, page views, clicks, form submits, bounce rate, top pages/referrers/countries, device breakdown (mobile/tablet/desktop), top browsers, top OS, Web Vitals (LCP, FCP, FID, CLS) |
+| **`get_analysis`** | **START HERE.** Pre-computed analysis report | Problem areas, funnel health, session findings, prioritized recommendations with specific page paths, element IDs, and session IDs |
+| `get_app_context` | Raw app-wide metrics (use after analysis) | Sessions, visitors, page views, clicks, form submits, bounce rate, top pages/referrers/countries, device breakdown (mobile/tablet/desktop), top browsers, top OS, Web Vitals (LCP, FCP, FID, CLS) |
 | `list_pages` | Discover tracked pages | Page paths, titles, first/last seen dates, view count, bounce/entry/exit counts |
 | `get_page_context` | Full page behavior profile | View count, unique visitors, bounce/entry/exit counts, avg duration, scroll depth, Web Vitals (LCP, FCP, FID, CLS), element interactions |
 | `get_page_stats` | Lightweight page metrics | Same as get_page_context but without element data — use for bulk page comparison |
@@ -26,10 +26,10 @@ There are no pre-computed summaries or AI-generated insights — you analyze the
 
 ## Analysis Workflow
 
-### Quick Start
-Call `get_analysis` first — it provides a pre-computed triage with specific page paths, element IDs, and session IDs you can immediately investigate with the other tools. If no analysis is available, proceed with the manual workflow below.
+### Quick Start (IMPORTANT)
+ALWAYS call `get_analysis` first before any other tool. It returns a pre-computed triage report with specific page paths, element IDs, and session IDs you can immediately investigate with the other tools. Only fall back to the manual workflow below if no analysis is available.
 
-Work **top-down** — start with aggregate behavior, then narrow based on what you find.
+Do NOT start with `get_app_context` or `get_sessions` -- those are for drilling deeper after you have the analysis.
 
 ### Phase 1: Understand the Big Picture
 

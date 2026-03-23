@@ -1,7 +1,7 @@
 {
   "name": "lcontext-mcp",
-  "version": "2026.3.4",
-  "description": "MCP server for Lcontext page analytics - provides page and element context for Claude",
+  "version": "2026.3.23",
+  "description": "MCP server for Lcontext - gives AI coding agents real user behavior data to build better software",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
